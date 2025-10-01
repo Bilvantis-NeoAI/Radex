@@ -120,7 +120,9 @@ export default function FolderDetailPage() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
       'text/markdown': ['.md'],
-      'text/html': ['.html', '.htm']
+      'text/html': ['.html', '.htm'],
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.csv']
     }
   });
 
@@ -253,7 +255,7 @@ export default function FolderDetailPage() {
                 Drag and drop files here, or click to select
               </p>
               <p className="text-sm text-gray-500">
-                Supports PDF, DOC, DOCX, TXT, MD, HTML files
+                Supports PDF, DOC, DOCX, CSV, TXT, MD, HTML files
               </p>
             </div>
           )}

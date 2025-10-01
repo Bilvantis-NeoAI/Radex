@@ -24,9 +24,14 @@ export default function DashboardPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  // useEffect(() => {
+  //   loadDashboardData();
+  // }, []);
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (user) {
+      loadDashboardData();
+    }
+  }, [user]);
 
   const loadDashboardData = async () => {
     try {
@@ -82,7 +87,7 @@ export default function DashboardPage() {
       {/* Welcome Section */}
       <div className="bg-white rounded-lg shadow p-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Welcome back, {user?.username}!
+          Welcome back, {user && 'first_name' in user ? `${user.first_name} ${user.last_name}` : user?.username || 'User'}!
         </h1>
         <p className="text-gray-600">
           Manage your documents and explore your knowledge base with AI-powered search.

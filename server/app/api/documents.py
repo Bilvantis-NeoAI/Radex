@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import Document, DocumentUploadResponse
 from app.models import User as UserModel
-from app.core.dependencies import get_current_active_user
+from app.models import OktaUser
+from app.core.dependencies import get_current_okta_user
 from app.core.exceptions import NotFoundException, BadRequestException, PermissionDeniedException
-from app.services.permission_service import PermissionService
+from app.services.permission_service import PermissionService, Okta_PermissionService
 from app.services.document_service import DocumentService
 from app.services.embedding_service import EmbeddingService
 import io
@@ -19,22 +20,22 @@ router = APIRouter()
 async def upload_document(
     folder_id: UUID,
     file: UploadFile = File(...),
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Upload a document to a folder"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
     # Check write permission for folder
-    permission_service.check_folder_access(current_user.id, folder_id, "write")
+    permission_service.check_folder_access(current_user.okta_user_id, folder_id, "write")
     
     # Upload document
     document = await document_service.upload_document(
         file=file,
         folder_id=folder_id,
-        uploaded_by=current_user.id
+        uploaded_by=current_user.okta_user_id
     )
     
     # Start background task to process embeddings
@@ -56,11 +57,11 @@ async def upload_document(
 @router.get("/documents/{document_id}", response_model=Document)
 def get_document_metadata(
     document_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Get document metadata"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
@@ -69,7 +70,7 @@ def get_document_metadata(
         raise NotFoundException("Document not found")
     
     # Check read permission for folder
-    permission_service.check_folder_access(current_user.id, document.folder_id, "read")
+    permission_service.check_folder_access(current_user.okta_user_id, document.folder_id, "read")
     
     # Check embedding status
     embeddings = embedding_service.get_document_embeddings(document_id)
@@ -94,11 +95,11 @@ def get_document_metadata(
 @router.get("/documents/{document_id}/download")
 async def download_document(
     document_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Download a document"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     
     document = document_service.get_document(document_id)
@@ -106,7 +107,7 @@ async def download_document(
         raise NotFoundException("Document not found")
     
     # Check read permission for folder
-    permission_service.check_folder_access(current_user.id, document.folder_id, "read")
+    permission_service.check_folder_access(current_user.okta_user_id, document.folder_id, "read")
     
     # Download from MinIO
     file_response, filename, file_type = document_service.download_document(document_id)
@@ -137,11 +138,11 @@ async def download_document(
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
     document_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Delete a document"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     
     document = document_service.get_document(document_id)
@@ -149,7 +150,7 @@ def delete_document(
         raise NotFoundException("Document not found")
     
     # Check delete permission for folder
-    permission_service.check_folder_access(current_user.id, document.folder_id, "delete")
+    permission_service.check_folder_access(current_user.okta_user_id, document.folder_id, "delete")
     
     # Delete document
     document_service.delete_document(document_id)
@@ -157,16 +158,16 @@ def delete_document(
 @router.get("/folders/{folder_id}/documents", response_model=List[Document])
 def list_folder_documents(
     folder_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """List all documents in a folder"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
     # Check read permission for folder
-    permission_service.check_folder_access(current_user.id, folder_id, "read")
+    permission_service.check_folder_access(current_user.okta_user_id, folder_id, "read")
     
     documents = document_service.get_documents_in_folder(folder_id)
     
@@ -198,11 +199,11 @@ def list_folder_documents(
 @router.post("/documents/{document_id}/reprocess-embeddings", status_code=status.HTTP_202_ACCEPTED)
 async def reprocess_document_embeddings(
     document_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Reprocess embeddings for a document"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
@@ -211,7 +212,7 @@ async def reprocess_document_embeddings(
         raise NotFoundException("Document not found")
     
     # Check write permission for folder (needed to reprocess)
-    permission_service.check_folder_access(current_user.id, document.folder_id, "write")
+    permission_service.check_folder_access(current_user.okta_user_id, document.folder_id, "write")
     
     # Reprocess embeddings
     try:
@@ -223,11 +224,11 @@ async def reprocess_document_embeddings(
 @router.get("/documents/{document_id}/embeddings/stats")
 def get_document_embedding_stats(
     document_id: UUID,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: OktaUser = Depends(get_current_okta_user),
     db: Session = Depends(get_db)
 ):
     """Get embedding statistics for a document"""
-    permission_service = PermissionService(db)
+    permission_service = Okta_PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
@@ -236,7 +237,7 @@ def get_document_embedding_stats(
         raise NotFoundException("Document not found")
     
     # Check read permission for folder
-    permission_service.check_folder_access(current_user.id, document.folder_id, "read")
+    permission_service.check_folder_access(current_user.okta_user_id, document.folder_id, "read")
     
     stats = embedding_service.get_embedding_stats(document_id)
     return stats

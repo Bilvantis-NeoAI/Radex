@@ -6,6 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import Link from 'next/link';
+import { auth } from '@/lib/firebaseconfig';
+import { OAuthProvider, signInWithPopup } from 'firebase/auth';
+import apiClient from '@/lib/api';
 
 export default function LoginForm() {
   const [username, setUsername] = useState('');
@@ -14,6 +17,7 @@ export default function LoginForm() {
   const [error, setError] = useState('');
   
   const { login } = useAuth();
+  const { oktaLogin } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,7 +35,48 @@ export default function LoginForm() {
       setIsLoading(false);
     }
   };
+  // const handleOktaLogin = async () => {
+  //   setIsLoading(true);
+  //   setError('');
+    
+  //   try {
+  //     const provider = new OAuthProvider('oidc.okta');
+  //     const result = await signInWithPopup(auth, provider);
+  //     const user = result.user;
 
+  //     const idToken = await user.getIdToken();
+
+  //     // Sync with FastAPI backend
+  //     await apiClient.syncFirebaseUser(result);
+
+  //     router.push('/dashboard');
+  //   } catch (error) {
+  //     console.error(error);
+  //     setError('Okta login failed');
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
+
+  const handleOktaLogin = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const provider = new OAuthProvider('oidc.okta');
+      const result = await signInWithPopup(auth, provider);
+
+      await oktaLogin(result);  // now context is hydrated
+      router.push('/dashboard');
+    } catch (error) {
+      console.error(error);
+      setError('Okta login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+     
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8">
@@ -91,13 +136,21 @@ export default function LoginForm() {
             </div>
           )}
 
-          <div>
+          <div className="flex gap-3">
             <Button
               type="submit"
-              className="w-full"
+              className="flex-1"
               disabled={isLoading}
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500"
+              disabled={isLoading}
+              onClick={handleOktaLogin}
+            >
+              Sign in with Okta
             </Button>
           </div>
 

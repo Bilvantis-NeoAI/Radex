@@ -5,6 +5,8 @@ import { Folder, FolderPlus, ChevronRight, ChevronDown } from 'lucide-react';
 import { Folder as FolderType } from '@/types/folder';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/contexts/AuthContext';
+import { usePathname } from 'next/navigation';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -86,14 +88,18 @@ function FolderTree({ folders, level = 0, onFolderSelect }: FolderTreeProps) {
 }
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const pathname = usePathname();
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadFolders();
-  }, []);
+    if (user) {
+      loadFolders();
+    }
+  }, [user]);
 
   const loadFolders = async () => {
     try {
@@ -123,7 +129,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const handleFolderSelect = (folder: FolderType) => {
     window.location.href = `/folders/${folder.id}`;
   };
-
+  
+  // hide sidebar on rag chat
+  if (pathname.startsWith('/chat')) {
+    return null;
+  }
+  
   return (
     <>
       {/* Mobile backdrop */}

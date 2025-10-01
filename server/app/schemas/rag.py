@@ -7,6 +7,7 @@ class RAGQuery(BaseModel):
     folder_ids: Optional[List[UUID]] = None
     limit: int = Field(default=10, ge=1, le=50)
     min_relevance_score: float = Field(default=0.7, ge=0.0, le=1.0)
+    session_id: UUID  # <-- REQUIRED chat session ID
 
 class RAGChunk(BaseModel):
     document_id: UUID

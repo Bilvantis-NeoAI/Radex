@@ -1,15 +1,18 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { twMerge } from 'tailwind-merge';
+import clsx from 'clsx';
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+export function cn(...inputs: any[]): string {
+	return twMerge(clsx(inputs));
 }
 
-export function getErrorMessage(error: unknown, defaultMessage: string): string {
-  if (error && typeof error === 'object' && 'response' in error && 
-      error.response && typeof error.response === 'object' && 'data' in error.response &&
-      error.response.data && typeof error.response.data === 'object' && 'detail' in error.response.data) {
-    return (error.response.data as {detail: string}).detail;
-  }
-  return defaultMessage;
-}
+export function getErrorMessage(error: unknown, fallback: string = 'An error occurred'): string {
+	// Axios-style error handling
+	const maybeAxios = error as any;
+	const detail = maybeAxios?.response?.data?.detail || maybeAxios?.response?.data?.message;
+	if (detail && typeof detail === 'string') return detail;
+
+	if (maybeAxios?.message && typeof maybeAxios.message === 'string') return maybeAxios.message;
+
+	if (error instanceof Error) return error.message || fallback;
+	return fallback;
+} 

@@ -21,7 +21,7 @@ class DocumentInDB(DocumentBase):
     folder_id: UUID
     file_size: Optional[int] = None
     file_path: str
-    uploaded_by: Optional[UUID] = None
+    uploaded_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     

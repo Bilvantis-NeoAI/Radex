@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Folder, FolderPlus, Grid, List, MoreVertical, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function FoldersPage() {
   const [folders, setFolders] = useState<FolderType[]>([]);
@@ -16,10 +17,13 @@ export default function FoldersPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadFolders();
-  }, []);
+    if (user) {
+      loadFolders();
+    }
+  }, [user]);
 
   const loadFolders = async () => {
     try {

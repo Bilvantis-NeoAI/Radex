@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 
@@ -44,3 +44,32 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
+
+class OktaUserSchema(BaseModel):
+    okta_user_id: str
+    email: EmailStr
+    first_name: str
+    last_name: str
+    groups: Optional[List[str]] = None
+    roles: Optional[str] = None
+    is_active: bool = True
+    is_superuser: bool = False
+
+    class Config:
+        orm_mode = True
+
+class OktaUserUpdate(BaseModel):
+    okta_user_id: str  # required to identify the user
+    email: Optional[EmailStr] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    groups: Optional[List[str]] = None
+    roles: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_superuser: Optional[bool] = None
+    
+    class Config:
+        orm_mode = True
+
+class OktaUser(OktaUserSchema):
+    pass

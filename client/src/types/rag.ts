@@ -1,22 +1,27 @@
+
 export interface RAGQuery {
   query: string;
-  folder_ids: string[];
-  limit?: number;
+  folder_ids?: string[];        // optional
+  limit?: number;               // optional, defaults to 10
+  session_id: string;           // required
 }
 
 export interface RAGResponse {
+  query: string;
   answer: string;
   sources: RAGSource[];
-  query_time: number;
-  folder_ids: string[];
+  total_chunks: number;
+  processing_time: number;      // in seconds
 }
 
 export interface RAGSource {
   document_id: string;
   document_name: string;
+  folder_id: string;
   folder_name: string;
   chunk_text: string;
-  relevance_score: number;
+  relevance_score: number;      // 0.0 - 1.0
+  metadata: Record<string, any>; // optional key-value data
   page_number?: number;
 }
 

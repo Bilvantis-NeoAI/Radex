@@ -1,338 +1,249 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import type { User, OktaUser, AuthResponse, RegisterRequest } from '@/types/auth';
+import type { Folder, CreateFolderRequest, UpdateFolderRequest } from '@/types/folder';
+import type { Document } from '@/types/document';
+import type { RAGQuery, RAGResponse } from '@/types/rag';
+import type { ChatSessionResponse, ChatSessionWithMessages, ChatMessageResponse, ChatMessageCreate } from '@/types/chat';
+import { validate as isUUID } from 'uuid';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_PREFIX = '/api/v1';
 
-class ApiClient {
-  private client: AxiosInstance;
+class APIClient {
+	private http: AxiosInstance;
+	private token: string | null = null;
+	private abortController: AbortController | null = null;
 
-  constructor() {
-    this.client = axios.create({
-      baseURL: BASE_URL,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+	constructor() {
+		this.http = axios.create({
+			baseURL: `${API_BASE_URL}${API_PREFIX}`,
+		});
+
+		this.abortController = typeof window !== 'undefined' ? new AbortController() : null;
+
+		// Attach Authorization header when token set
+		this.http.interceptors.request.use((config) => {
+			if (this.token) {
+				config.headers = config.headers || {};
+				config.headers.Authorization = `Bearer ${this.token}`;
+			}
+			if (this.abortController) {
+				config.signal = this.abortController.signal;
+			}
+			return config;
+		});
+
+		// Initialize from localStorage if available in browser
+		if (typeof window !== 'undefined') {
+			const saved = localStorage.getItem('auth_token');
+			if (saved) {
+				this.setToken(saved);
+			}
+		}
+	}
+
+	setToken(token: string | null) {
+		this.token = token;
+		if (typeof window !== 'undefined') {
+			if (token) localStorage.setItem('auth_token', token);
+			else localStorage.removeItem('auth_token');
+			console.log('Token set in localStorage:', token);
+		}
+		// When logging out, cancel any in-flight requests
+		if (!token && this.abortController) {
+			this.abortController.abort();
+			this.abortController = new AbortController();
+		}
+	}
+
+	// Auth
+	async login(username: string, password: string): Promise<AuthResponse> {
+		const form = new URLSearchParams();
+		form.append('username', username);
+		form.append('password', password);
+
+		const tokenResp = await this.http.post('/auth/login', form, {
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		});
+		const access_token: string = tokenResp.data.access_token;
+		this.setToken(access_token);
+		const user = await this.getCurrentUser();
+		return {
+			access_token,
+			token_type: tokenResp.data.token_type ?? 'bearer',
+			expires_in: 0,
+			user,
+		};
+	}
+
+	// okta-login
+	async syncFirebaseUser(firebaseResult: any) {
+		const tokenResp = await this.http.post('/auth/okta_login', firebaseResult);
+		const access_token: string = tokenResp.data.access_token; // ✅ extract string
+		this.setToken(access_token); // sets Authorization: Bearer <token>
+		
+		return tokenResp.data; // { access_token, token_type }
+	}
+	async register(payload: RegisterRequest): Promise<AuthResponse> {
+		await this.http.post('/auth/register', payload);
+		return this.login(payload.username, payload.password);
+	}
+
+	async getCurrentUser(): Promise<OktaUser> {
+		const resp = await this.http.get('/auth/okta_me');
+		return resp.data as OktaUser;
+	}
+
+	// Folders
+	async getFolders(): Promise<Folder[]> {
+		const resp = await this.http.get('/folders/');
+		return resp.data as Folder[];
+	}
+
+	async createFolder(payload: CreateFolderRequest): Promise<Folder> {
+		const resp = await this.http.post('/folders/', payload);
+		return resp.data as Folder;
+	}
+
+	async getFolder(folderId: string): Promise<Folder> {
+		const resp = await this.http.get(`/folders/${folderId}`);
+		return resp.data as Folder;
+	}
+
+	async updateFolder(folderId: string, payload: UpdateFolderRequest): Promise<Folder> {
+		const resp = await this.http.put(`/folders/${folderId}`, payload);
+		return resp.data as Folder;
+	}
+
+	// Documents
+	async getFolderDocuments(folderId: string): Promise<Document[]> {
+		const resp = await this.http.get(`/folders/${folderId}/documents`);
+		return resp.data as Document[];
+	}
+
+	async uploadDocument(folderId: string, file: File): Promise<unknown> {
+		const formData = new FormData();
+		formData.append('file', file);
+		const resp = await this.http.post(`/folders/${folderId}/documents`, formData, {
+			headers: { 'Content-Type': 'multipart/form-data' },
+		});
+		return resp.data;
+	}
+
+	async deleteDocument(documentId: string): Promise<void> {
+		await this.http.delete(`/documents/${documentId}`);
+	}
+
+	async downloadDocument(documentId: string): Promise<AxiosResponse<Blob>> {
+		return await this.http.get(`/documents/${documentId}/download`, { responseType: 'blob' });
+	}
+
+	// Users (admin)
+	async list_okta_users(params?: Record<string, unknown>): Promise<User[]> {
+		const resp = await this.http.get('/users/okta', { params });
+		return resp.data as User[];
+	}
+
+	async createUser(payload: { email: string; username: string; password: string; is_active: boolean; is_superuser: boolean; }): Promise<User> {
+		const resp = await this.http.post('/users/', payload);
+		return resp.data as User;
+	}
+
+	async updateUser(userId: string, payload: Record<string, unknown>): Promise<User> {
+		const resp = await this.http.put(`/users/${userId}`, payload);
+		return resp.data as User;
+	}
+
+	async deleteUser(userId: string): Promise<void> {
+		await this.http.delete(`/users/${userId}`);
+	}
+
+	async find_okta_user(params: { email?: string; username?: string }): Promise<User> {
+		const resp = await this.http.get('/users/okta_find', { params });
+		return resp.data as User;
+	}
+
+	// Folder permissions
+	async getFolderPermissions(folderId: string): Promise<any[]> {
+		const resp = await this.http.get(`/folders/${folderId}/permissions`);
+		return resp.data as any[];
+	}
+
+	async grantFolderPermission(folderId: string, payload: Record<string, unknown>): Promise<any> {
+		const resp = await this.http.post(`/folders/${folderId}/permissions`, payload);
+		return resp.data;
+	}
+
+	async revokeFolderPermission(folderId: string, userId: string): Promise<void> {
+		await this.http.delete(`/folders/${folderId}/permissions/${userId}`);
+	}
+
+	// RAG
+	async getRAGFolders(): Promise<Folder[]> {
+		const resp = await this.http.get('/rag/folders');
+		return resp.data as Folder[];
+	}
+
+	// async queryRAG(payload: RAGQuery): Promise<RAGResponse> {
+	// 	const resp = await this.http.post('/rag/query', payload);
+	// 	return resp.data as RAGResponse;
+	// }
+
+	async queryRAG(payload: RAGQuery): Promise<RAGResponse> {
+	if (!isUUID(payload.session_id)) {
+		throw new Error('Invalid sessionId');
+	}
+	
+	// Send payload directly
+	const resp = await this.http.post(`/rag/query`, payload);
+	return resp.data as RAGResponse;
+	}
+
+	// Get all chat sessions for the current user
+	async getChatSessions(): Promise<ChatSessionResponse[]> {
+		const resp = await this.http.get('/chat/sessions');
+		return resp.data as ChatSessionResponse[];
+	}
+
+	// Create a new chat session (optional title)
+	async createChatSession(title?: string): Promise<ChatSessionResponse> {
+		const payload = title ? { title } : {};
+		const resp = await this.http.post('/chat/sessions', payload);
+		return resp.data as ChatSessionResponse;
+	}
+
+	// Get all messages for a specific chat session
+	async getChatMessages(sessionId: string): Promise<ChatSessionWithMessages> {
+	const resp = await this.http.get(`/chat/${sessionId}/messages`);
+	return resp.data as ChatSessionWithMessages;
+	}
+
+	// Send a new message in a chat session
+	async sendChatMessage(
+	sessionId: string,
+	payload: ChatMessageCreate
+	): Promise<ChatMessageResponse> {
+	const resp = await this.http.post(`/chat/${sessionId}/messages`, payload);
+	return resp.data as ChatMessageResponse;
+	}
+
+	// // Delete a chat session and its messages
+	// async deleteChatSession(sessionId: string) {
+	// 	return await this.http.delete(`/chat/sessions/${sessionId}`);
+	// }
+
+	async deleteChatSession(sessionId: string) {
+    return await this.http.delete(`/chat/sessions/${sessionId}`, { 
+        validateStatus: (status) => status === 204 
     });
+	}
 
-    // Request interceptor to add auth token
-    this.client.interceptors.request.use(
-      (config) => {
-        const token = this.getToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
-
-    // Response interceptor for error handling
-    this.client.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          this.removeToken();
-          window.location.href = '/login';
-        }
-        return Promise.reject(error);
-      }
-    );
-  }
-
-  private getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('auth_token');
-  }
-
-  private removeToken(): void {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem('auth_token');
-  }
-
-  public setToken(token: string): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('auth_token', token);
-  }
-
-  // Auth endpoints
-  async register(data: { email: string; username: string; password: string }) {
-    const response = await this.client.post('/api/v1/auth/register', data);
-    return response.data;
-  }
-
-  async login(username: string, password: string) {
-    const formData = new FormData();
-    formData.append('username', username);
-    formData.append('password', password);
-    
-    const response = await this.client.post('/api/v1/auth/login', formData, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
-    return response.data;
-  }
-
-  async getCurrentUser() {
-    const response = await this.client.get('/api/v1/auth/me');
-    return response.data;
-  }
-
-  async refreshToken() {
-    const response = await this.client.post('/api/v1/auth/refresh');
-    return response.data;
-  }
-
-  // Folder endpoints
-  async getFolders() {
-    const response = await this.client.get('/api/v1/folders');
-    return response.data;
-  }
-
-  async createFolder(data: { name: string; parent_id?: string }) {
-    const response = await this.client.post('/api/v1/folders', data);
-    return response.data;
-  }
-
-  async getFolder(id: string) {
-    const response = await this.client.get(`/api/v1/folders/${id}`);
-    return response.data;
-  }
-
-  async updateFolder(id: string, data: { name: string }) {
-    const response = await this.client.put(`/api/v1/folders/${id}`, data);
-    return response.data;
-  }
-
-  async deleteFolder(id: string) {
-    await this.client.delete(`/api/v1/folders/${id}`);
-  }
-
-  async getFolderPermissions(id: string) {
-    const response = await this.client.get(`/api/v1/folders/${id}/permissions`);
-    return response.data;
-  }
-
-  async grantFolderPermission(folderId: string, data: { 
-    user_id: string; 
-    can_read?: boolean; 
-    can_write?: boolean; 
-    can_delete?: boolean; 
-    is_admin?: boolean; 
-  }) {
-    const response = await this.client.post(`/api/v1/folders/${folderId}/permissions`, data);
-    return response.data;
-  }
-
-  async revokeFolderPermission(folderId: string, userId: string) {
-    await this.client.delete(`/api/v1/folders/${folderId}/permissions/${userId}`);
-  }
-
-  // Document endpoints
-  async uploadDocument(folderId: string, file: File) {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const response = await this.client.post(`/api/v1/folders/${folderId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return response.data;
-  }
-
-  async getFolderDocuments(folderId: string) {
-    const response = await this.client.get(`/api/v1/folders/${folderId}/documents`);
-    return response.data;
-  }
-
-  async getDocument(id: string) {
-    const response = await this.client.get(`/api/v1/documents/${id}`);
-    return response.data;
-  }
-
-  async downloadDocument(id: string) {
-    const response = await this.client.get(`/api/v1/documents/${id}/download`, {
-      responseType: 'blob'
-    });
-    return response;
-  }
-
-  async deleteDocument(id: string) {
-    await this.client.delete(`/api/v1/documents/${id}`);
-  }
-
-  // RAG endpoints
-  async queryRAG(data: { query: string; folder_ids: string[]; limit?: number }) {
-    const response = await this.client.post('/api/v1/rag/query', data);
-    return response.data;
-  }
-
-  async getRAGFolders() {
-    const response = await this.client.get('/api/v1/rag/folders');
-    return response.data;
-  }
-
-  async suggestQueries(data: { folder_ids: string[] }) {
-    const response = await this.client.post('/api/v1/rag/suggest-queries', data);
-    return response.data;
-  }
-
-  async checkRAGHealth() {
-    const response = await this.client.get('/api/v1/rag/health');
-    return response.data;
-  }
-
-  // User management endpoints (admin only)
-  async listUsers(params?: {
-    email?: string;
-    username?: string;
-    is_active?: boolean;
-    is_superuser?: boolean;
-    limit?: number;
-    offset?: number;
-  }) {
-    const response = await this.client.get('/api/v1/users/', { params });
-    return response.data;
-  }
-
-  async searchUsers(query: string, limit?: number) {
-    const response = await this.client.get('/api/v1/users/search', { 
-      params: { q: query, limit } 
-    });
-    return response.data;
-  }
-
-  async createUser(data: {
-    email: string;
-    username: string;
-    password: string;
-    is_active?: boolean;
-    is_superuser?: boolean;
-  }) {
-    const response = await this.client.post('/api/v1/users/', data);
-    return response.data;
-  }
-
-  async getUserById(userId: string) {
-    const response = await this.client.get(`/api/v1/users/${userId}`);
-    return response.data;
-  }
-
-  async updateUser(userId: string, data: {
-    email?: string;
-    username?: string;
-    password?: string;
-    is_active?: boolean;
-    is_superuser?: boolean;
-  }) {
-    const response = await this.client.put(`/api/v1/users/${userId}`, data);
-    return response.data;
-  }
-
-  async deleteUser(userId: string) {
-    await this.client.delete(`/api/v1/users/${userId}`);
-  }
-
-  async findUser(params: { email?: string; username?: string }) {
-    const response = await this.client.get('/api/v1/users/find', { params });
-    return response.data;
-  }
-
-  // Confluence endpoints
-  async addConfluenceAuth(data: {
-    confluence_type: string;
-    base_url: string;
-    email?: string;
-    api_token?: string;
-    oauth_token?: string;
-    oauth_refresh_token?: string;
-    token_expires_at?: string;
-  }) {
-    const response = await this.client.post('/api/v1/confluence/auth', data);
-    return response.data;
-  }
-
-  async getConfluenceCredentials() {
-    const response = await this.client.get('/api/v1/confluence/auth');
-    return response.data;
-  }
-
-  async deleteConfluenceCredential(credentialId: string) {
-    await this.client.delete(`/api/v1/confluence/auth/${credentialId}`);
-  }
-
-  async checkConfluenceAuthStatus(credentialId: string) {
-    const response = await this.client.get(`/api/v1/confluence/auth/status/${credentialId}`);
-    return response.data;
-  }
-
-  async getConfluenceSpaces(credentialId: string) {
-    const response = await this.client.get('/api/v1/confluence/spaces', {
-      params: { credential_id: credentialId }
-    });
-    return response.data;
-  }
-
-  async getConfluenceSpacePages(credentialId: string, spaceKey: string) {
-    const response = await this.client.get(`/api/v1/confluence/spaces/${spaceKey}/pages`, {
-      params: { credential_id: credentialId }
-    });
-    return response.data;
-  }
-
-  async searchConfluence(data: {
-    credential_id: string;
-    query: string;
-    search_type?: "cql" | "text";
-    limit?: number;
-  }) {
-    const response = await this.client.post('/api/v1/confluence/search', data);
-    return response.data;
-  }
-
-  async createConfluenceImport(data: {
-    credential_id: string;
-    folder_id: string;
-    import_type: string;
-    space_key?: string;
-    page_id?: string;
-    include_attachments?: boolean;
-    include_comments?: boolean;
-    recursive?: boolean;
-  }) {
-    const response = await this.client.post('/api/v1/confluence/import', data);
-    return response.data;
-  }
-
-  async getConfluenceImportStatus(importId: string) {
-    const response = await this.client.get(`/api/v1/confluence/import/${importId}/status`);
-    return response.data;
-  }
-
-  async createConfluenceBatchImport(data: {
-    credential_id: string;
-    folder_id: string;
-    imports: Array<{
-      import_type: string;
-      space_key?: string;
-      page_id?: string;
-    }>;
-  }) {
-    const response = await this.client.post('/api/v1/confluence/import/batch', data);
-    return response.data;
-  }
-
-  async syncConfluenceContent(importId: string) {
-    const response = await this.client.post(`/api/v1/confluence/sync/${importId}`);
-    return response.data;
-  }
-
-  async getConfluenceSyncHistory(folderId?: string, limit?: number) {
-    const params: Record<string, string | number> = {};
-    if (folderId) params.folder_id = folderId;
-    if (limit) params.limit = limit;
-    
-    const response = await this.client.get('/api/v1/confluence/sync/history', { params });
-    return response.data;
-  }
+	async updateChatSession(sessionId: string, title: string): Promise<ChatSessionResponse> {
+	const resp = await this.http.patch(`/chat/sessions/${sessionId}`, { title });
+	return resp.data as ChatSessionResponse;
+	}
+	
 }
 
-export const apiClient = new ApiClient();
-export default apiClient;
+const apiClient = new APIClient();
+export default apiClient; 

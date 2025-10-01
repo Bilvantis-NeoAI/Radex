@@ -16,6 +16,7 @@ email_validator==2.2.0
 # Authentication and security
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+bcrypt==3.2.2   # <- add this, ensures compatibility
 
 # File upload and multipart
 python-multipart==0.0.20
@@ -36,3 +37,7 @@ markdown==3.8.2
 httpx==0.28.1
 pytest==8.4.1
 pytest-asyncio==1.1.0
+
+psycopg2-binary
+ 
+firebase-admin

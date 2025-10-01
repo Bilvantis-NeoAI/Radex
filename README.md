@@ -29,7 +29,6 @@ RADEX/
 ├── server/              # FastAPI backend
 │   ├── app/            # Application code
 │   ├── tests/          # Test suites
-│   └── docker-compose.yml
 ├── client/              # Next.js frontend
 │   ├── src/            # React components
 │   ├── public/         # Static assets
@@ -68,7 +67,7 @@ RADEX/
 
 ```bash
 git clone https://github.com/yourusername/radex.git
-cd radex
+cd radex_forked
 ```
 
 ### 2. Configure Environment
@@ -77,7 +76,7 @@ cd radex
 ```bash
 cd server
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env with your configuration and place it in root directory i.e radex_forked
 ```
 
 **Required server environment variables:**
@@ -114,10 +113,11 @@ NEXT_PUBLIC_MAX_FILE_SIZE=10485760
 
 ### 3. Start the Application
 
-#### Option A: Full Stack with Docker (Recommended)
+#### Full Stack with Docker
 
 From the root directory:
 ```bash
+cd radex_forked
 # Start all services (backend + frontend + infrastructure)
 docker-compose up --build
 
@@ -131,43 +131,14 @@ Services will be available at:
 - **API Health Check**: http://localhost:8000/health
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin)
 
-#### Option B: Development Mode
-
-**Terminal 1 - Backend:**
-```bash
-cd server
-
-# Start infrastructure only
-docker-compose up -d postgres redis minio
-
-# Install Python dependencies
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Run FastAPI server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd client
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
 ### 4. Initial Setup
 
 #### Default Admin Account
 
 The system automatically creates a default admin user:
-- **Username**: `admin`
-- **Password**: `admin123456`
-- **Email**: `admin@example.com`
+- **Username**: `super_admin`
+- **Password**: `Admin@123`
+- **Email**: `admin@gmail.com`
 
 ⚠️ **Security Note**: Change the default password immediately in production!
 

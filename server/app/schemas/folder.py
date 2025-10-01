@@ -15,7 +15,7 @@ class FolderUpdate(BaseModel):
 
 class FolderInDB(FolderBase):
     id: UUID
-    owner_id: UUID
+    owner_id: str
     path: str
     created_at: datetime
     updated_at: datetime
@@ -33,7 +33,7 @@ class FolderWithPermissions(Folder):
     is_admin: bool = False
 
 class PermissionGrant(BaseModel):
-    user_id: UUID
+    user_id: str
     can_read: bool = False
     can_write: bool = False
     can_delete: bool = False
@@ -41,13 +41,13 @@ class PermissionGrant(BaseModel):
 
 class PermissionInfo(BaseModel):
     id: UUID
-    user_id: UUID
+    user_id: str
     folder_id: UUID
     can_read: bool
     can_write: bool
     can_delete: bool
     is_admin: bool
-    granted_by: Optional[UUID]
+    granted_by: Optional[str]
     created_at: datetime
     
     class Config:

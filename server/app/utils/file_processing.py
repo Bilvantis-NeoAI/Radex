@@ -4,6 +4,7 @@ from typing import Optional
 from pathlib import Path
 import pypdf
 import docx
+import csv
 from bs4 import BeautifulSoup
 import markdown
 
@@ -14,7 +15,7 @@ def get_file_type(filename: str) -> Optional[str]:
 
 def is_supported_file_type(file_type: str) -> bool:
     """Check if file type is supported for text extraction"""
-    supported_types = ['pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm']
+    supported_types = ['pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm','csv']
     return file_type.lower() in supported_types
 
 def extract_text_from_file(file_path: str, file_type: str) -> str:
@@ -32,6 +33,8 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
             return extract_markdown_text(file_path)
         elif file_type == 'txt':
             return extract_text_file(file_path)
+        elif file_type == 'csv':
+            return extract_csv_text(file_path)
         else:
             # Try to read as plain text
             return extract_text_file(file_path)
@@ -122,6 +125,30 @@ def extract_text_file(file_path: str) -> str:
     except Exception as e:
         raise ValueError(f"Error reading text file: {str(e)}")
 
+def extract_csv_text(file_path: str) -> str:
+    """Extract text from CSV file in a readable row/column format"""
+    try:
+        with open(file_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            lines = []
+            for row in reader:
+                # Join columns with tab for clarity
+                lines.append("\t".join(row))
+            return "\n".join(lines)
+    except UnicodeDecodeError:
+        # Retry with fallback encodings
+        encodings = ['latin-1', 'cp1252', 'iso-8859-1']
+        for encoding in encodings:
+            try:
+                with open(file_path, newline='', encoding=encoding) as csvfile:
+                    reader = csv.reader(csvfile)
+                    return "\n".join("\t".join(row) for row in reader)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError("Could not decode CSV file with any supported encoding")
+    except Exception as e:
+        raise ValueError(f"Error reading CSV file: {str(e)}")
+            
 def get_file_mime_type(file_path: str) -> Optional[str]:
     """Get MIME type of file"""
     mime_type, _ = mimetypes.guess_type(file_path)

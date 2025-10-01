@@ -3,6 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: pgvector/pgvector:pg15
+    container_name: postgres_db_radex
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -11,15 +12,16 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./server/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
+    container_name: redis_radex
     command: redis-server --requirepass ${REDIS_PASSWORD}
     ports:
       - "6379:6379"
@@ -28,18 +30,21 @@ services:
 
   minio:
     image: minio/minio:latest
+    container_name: minio_radex
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     ports:
-      - "9000:9000"
+      - "9002:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
 
   app:
-    build: .
+    build:
+      context: ./server
+    container_name: backend_radex
     ports:
       - "8000:8000"
     environment:
@@ -53,6 +58,11 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OKTA_CLIENT_ID: ${OKTA_CLIENT_ID}
+      OKTA_CLIENT_SECRET: ${OKTA_CLIENT_SECRET}
+      OKTA_DOMAIN: ${OKTA_DOMAIN}
+      OKTA_REDIRECT_URI: ${OKTA_REDIRECT_URI}
+      OKTA_API_TOKEN: ${OKTA_API_TOKEN}
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,8 +71,21 @@ services:
       minio:
         condition: service_started
     volumes:
-      - ./app:/app
+      - ./server/app:/app/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: frontend_radex
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://app:8000
+      NEXT_PUBLIC_APP_NAME: RADEX
+    depends_on:
+      - app
 
 volumes:
   postgres_data:

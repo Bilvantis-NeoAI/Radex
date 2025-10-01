@@ -7,6 +7,13 @@ export interface User {
   created_at: string;
 }
 
+export interface OktaUser {
+  okta_user_id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -26,9 +33,10 @@ export interface AuthResponse {
 }
 
 export interface AuthContextType {
-  user: User | null;
+  user: User | OktaUser | null;
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
+  oktaLogin: (firebaseResult: any) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;

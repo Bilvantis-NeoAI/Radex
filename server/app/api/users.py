@@ -3,10 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas import User, UserCreate, UserUpdate
+from app.schemas import User, UserCreate, UserUpdate, OktaUserSchema, OktaUserUpdate
 from pydantic import BaseModel, EmailStr, Field
-from app.models import User as UserModel
-from app.core.dependencies import get_current_superuser, get_current_active_user
+from app.models import User as UserModel, OktaUser
+from app.core.dependencies import get_current_superuser, get_current_active_user, get_current_okta_superuser
 from app.services.auth_service import AuthService
 from app.core.exceptions import NotFoundException, BadRequestException
 
@@ -72,6 +72,38 @@ async def find_user(
     
     return User(**user_dict)
 
+# ---------- Find user by email or name ----------
+@router.get("/okta_find", response_model=OktaUserSchema)
+async def find_okta_user(
+    email: Optional[str] = Query(None, description="Find user by exact email"),
+    first_name: Optional[str] = Query(None, description="Find user by first name"),
+    last_name: Optional[str] = Query(None, description="Find user by last name"),
+    current_user: OktaUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Find an Okta user by email or full name. Only one filter should be provided.
+    """
+    if not email and not (first_name and last_name):
+        raise BadRequestException("Provide either email or first_name+last_name")
+
+    if email and (first_name or last_name):
+        raise BadRequestException("Provide either email or first_name+last_name, not both")
+
+    auth_service = AuthService(db)
+
+    if email:
+        user = auth_service.get_okta_user_by_email(email)
+    elif first_name:
+        user = auth_service.get_okta_users_by_firstname(first_name)
+    else:
+        user = auth_service.get_okta_users_by_lastname(last_name)
+
+    if not user:
+        raise NotFoundException("Okta user not found")
+
+    return user
+
 @router.get("/", response_model=List[User])
 async def list_users(
     email: Optional[str] = Query(None, description="Filter by email address"),
@@ -127,6 +159,41 @@ async def list_users(
         user_list.append(User(**user_dict))
     
     return user_list
+
+@router.get("/okta", response_model=List[OktaUserSchema])
+async def list_okta_users(
+    email: Optional[str] = Query(None, description="Filter by exact email"),
+    first_name: Optional[str] = Query(None, description="Filter by first name"),
+    last_name: Optional[str] = Query(None, description="Filter by last name"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of users to return"),
+    offset: int = Query(0, ge=0, description="Number of users to skip"),
+    current_user: OktaUser = Depends(get_current_okta_superuser),
+    db: Session = Depends(get_db)
+):
+    """
+    List Okta users with optional filtering. Only accessible to superusers.
+    
+    Query parameters:
+    - email: Exact email match
+    - first_name: Filter by first name
+    - last_name: Filter by last name
+    - limit: Maximum number of results (1-100, default 50)
+    - offset: Number of results to skip (pagination)
+    """
+    query = db.query(OktaUser)
+
+    # Apply filters
+    if email:
+        query = query.filter(OktaUser.email == email)
+    if first_name:
+        query = query.filter(OktaUser.first_name == first_name)
+    if last_name:
+        query = query.filter(OktaUser.last_name == last_name)
+
+    # Apply pagination
+    users = query.offset(offset).limit(limit).all()
+
+    return users
 
 @router.get("/search", response_model=List[User])
 async def search_users(
@@ -190,8 +257,19 @@ async def get_user_by_id(
     
     return User(**user_dict)
 
-# CRUD Operations (Superuser only)
+@router.get("/{user_id}", response_model=OktaUserSchema)
+async def get_okta_user_by_id(
+    user_id: str,
+    current_user: OktaUser = Depends(get_current_superuser),
+    db: Session = Depends(get_db)
+):
+    auth_service = AuthService(db)
+    user = auth_service.get_okta_user_by_oktaid(user_id)
+    if not user:
+        raise NotFoundException("User not found")
+    return user
 
+# CRUD Operations (Superuser only)
 @router.post("/", response_model=User, status_code=201)
 async def create_user(
     user_data: AdminUserCreate,
@@ -270,4 +348,3 @@ async def delete_user(
         raise NotFoundException("User not found")
     
     return None
-

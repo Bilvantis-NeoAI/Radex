@@ -6,20 +6,22 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.config import settings
 from app.core.exceptions import BadRequestException, PermissionDeniedException
-from app.services.permission_service import PermissionService
+from app.services.permission_service import PermissionService, Okta_PermissionService
 from app.services.embedding_service import EmbeddingService
-from app.schemas import RAGQuery, RAGResponse, RAGChunk
+from app.services.chat_service import ChatService   
+from app.schemas import RAGQuery, RAGResponse, RAGChunk, ChatMessageCreate
 
 class RAGService:
     def __init__(self, db: Session):
         self.db = db
         self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
         self.permission_service = PermissionService(db)
+        self.okta_permission_service = Okta_PermissionService(db)
         self.embedding_service = EmbeddingService(db)
     
     async def query(
         self,
-        user_id: UUID,
+        user_id: str,
         rag_query: RAGQuery
     ) -> RAGResponse:
         """Process a RAG query and return response with sources"""
@@ -43,7 +45,17 @@ class RAGService:
                 min_similarity=rag_query.min_relevance_score
             )
             
+            # Initialize ChatService
+            chat_service = ChatService(self.db)
+
             if not similar_chunks:
+                chat_service.add_message(
+                    session_id=rag_query.session_id,
+                    user_id=user_id,
+                    query=rag_query.query,
+                    response="No relevant documents found for your query.",
+                    sources=[]
+                )
                 return RAGResponse(
                     query=rag_query.query,
                     answer="No relevant documents found for your query.",
@@ -68,7 +80,27 @@ class RAGService:
                     metadata=chunk["metadata"]
                 )
                 sources.append(source)
-            
+
+            # ---------- Persist query/response to chat session ----------
+            def serialize_source(source: RAGChunk):
+                return {
+                    "document_id": str(source.document_id),
+                    "document_name": source.document_name,
+                    "folder_id": str(source.folder_id),
+                    "folder_name": source.folder_name,
+                    "chunk_text": source.chunk_text,
+                    "relevance_score": source.relevance_score,
+                    "metadata": source.metadata
+                }
+
+            chat_service.add_message(
+                session_id=rag_query.session_id,
+                user_id=user_id,
+                query=rag_query.query,
+                response=answer,
+                sources=[serialize_source(s) for s in sources]
+            )
+
             processing_time = time.time() - start_time
             
             return RAGResponse(
@@ -86,12 +118,12 @@ class RAGService:
     
     def _get_accessible_folders(
         self,
-        user_id: UUID,
+        user_id: str,
         requested_folder_ids: Optional[List[UUID]] = None
     ) -> List[UUID]:
         """Get list of folder IDs that user can access"""
         # Get all accessible folders for user
-        accessible_folders = self.permission_service.get_user_accessible_folders(user_id)
+        accessible_folders = self.okta_permission_service.get_user_accessible_folders(user_id)
         accessible_folder_ids = [folder.id for folder in accessible_folders]
         
         # If specific folders were requested, filter to only include accessible ones
@@ -150,9 +182,9 @@ Answer:"""
         except Exception as e:
             raise BadRequestException(f"Failed to generate answer: {str(e)}")
     
-    def get_queryable_folders(self, user_id: UUID) -> List[Dict[str, Any]]:
+    def get_queryable_folders(self, user_id: str) -> List[Dict[str, Any]]:
         """Get list of folders that user can query"""
-        accessible_folders = self.permission_service.get_user_accessible_folders(user_id)
+        accessible_folders = self.okta_permission_service.get_user_accessible_folders(user_id)
         
         result = []
         for folder in accessible_folders:
@@ -181,7 +213,7 @@ Answer:"""
     
     async def suggest_related_queries(
         self,
-        user_id: UUID,
+        user_id: str,
         original_query: str,
         folder_ids: Optional[List[UUID]] = None
     ) -> List[str]:

@@ -2,6 +2,13 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
+    # Okta
+    OKTA_CLIENT_ID: str
+    OKTA_CLIENT_SECRET: str
+    OKTA_DOMAIN: str
+    OKTA_REDIRECT_URI: str
+    OKTA_API_TOKEN: str
+
     # Database
     database_url: str
     

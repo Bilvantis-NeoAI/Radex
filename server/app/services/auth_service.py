@@ -1,9 +1,11 @@
 from typing import Optional
 from sqlalchemy.orm import Session
-from app.models import User
-from app.schemas import UserCreate, UserUpdate
+from app.models import User, OktaUser
+from app.schemas import UserCreate, UserUpdate, OktaUserSchema, OktaUserUpdate
 from app.core.security import get_password_hash, verify_password
 from app.core.exceptions import BadRequestException, NotFoundException, ConflictException
+from app.config import settings
+import requests
 
 class AuthService:
     def __init__(self, db: Session):
@@ -31,7 +33,115 @@ class AuthService:
         self.db.commit()
         self.db.refresh(db_user)
         return db_user
-    
+        
+    def create_okta_user(self, user_data: OktaUserSchema) -> OktaUser:
+        # Check if user with email already exists
+        db_user = self.db.query(OktaUser).filter(OktaUser.email == user_data.email).first()
+        if db_user:
+            return db_user
+
+        # Create new user
+        db_user = OktaUser(
+            okta_user_id=user_data.okta_user_id,
+            email=user_data.email,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            groups=user_data.groups,
+            roles=user_data.roles,
+        )
+
+        self.db.add(db_user)
+        self.db.commit()
+        self.db.refresh(db_user)
+        return db_user
+
+    def get_groups_by_user(self, okta_user_id:str) -> Optional[OktaUser]:
+        print(settings.OKTA_DOMAIN)
+        print(settings.OKTA_CLIENT_ID)
+        print(settings.OKTA_API_TOKEN[:6], "...")
+
+        headers = {
+            "Authorization": f"SSWS {settings.OKTA_API_TOKEN}",
+            "Accept": "application/json"
+            }
+        # Get groups assigned to the app
+        url = f"{settings.OKTA_DOMAIN}/api/v1/apps/{settings.OKTA_CLIENT_ID}/groups"
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        groups = response.json()
+        detailed_groups = []
+
+        for group in groups:
+            group_id = group.get("id")
+            if not group_id:
+                continue
+
+            # Get group details
+            group_detail_url = f"{settings.OKTA_DOMAIN}/api/v1/groups/{group_id}"
+            group_response = requests.get(group_detail_url, headers=headers)
+            if group_response.status_code != 200:
+                detailed_groups.append({
+                    "id": group_id,
+                    "name": "Error fetching group name",
+                    "users": []
+                })
+                continue
+
+            group_info = group_response.json()
+            group_name = group_info["profile"].get("name", "Unnamed Group")
+
+            # Get users in the group
+            users_url = f"{settings.OKTA_DOMAIN}/api/v1/groups/{group_id}/users"
+            users_response = requests.get(users_url, headers=headers)
+            users = []
+
+            if users_response.status_code == 200:
+                users_list = users_response.json()
+                for user in users_list:
+                    user_id = user.get("id")
+                    if user_id:
+                        # Get full user info
+                        user_detail_url = f"{settings.OKTA_DOMAIN}/api/v1/users/{user_id}"
+                        user_response = requests.get(user_detail_url, headers=headers)
+                        if user_response.status_code == 200:
+                            user_info = user_response.json()
+                            users.append(user_info)
+                        else:
+                            users.append({"id": user_id, "error": "Failed to fetch user details"})
+            else:
+                users = []
+
+            detailed_groups.append({
+                "id": group_id,
+                "name": group_name,
+                "users": users
+            })
+        
+        user_groups = [
+            group["name"]
+            for group in detailed_groups
+            if any(user.get("id") == okta_user_id for user in group["users"])
+        ]
+
+        return user_groups
+
+    def get_user_role(self, okta_user_id:str) -> Optional[OktaUser]:
+        headers = {
+        "Authorization": f"SSWS {settings.OKTA_API_TOKEN}",
+        "Accept": "application/json"
+        }
+        print(f"okta user id: {okta_user_id}")
+
+        url = f"{settings.OKTA_DOMAIN}/api/v1/users/{okta_user_id}/roles"
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+        
+        roles = response.json()
+        return roles
+
     def authenticate_user(self, username: str, password: str) -> Optional[User]:
         user = self.db.query(User).filter(User.username == username).first()
         if not user:
@@ -49,6 +159,25 @@ class AuthService:
     def get_user_by_username(self, username: str) -> Optional[User]:
         return self.db.query(User).filter(User.username == username).first()
     
+    def authenticate_okta_user(self, okta_user_id: str) -> Optional[OktaUser]:
+        user = self.db.query(OktaUser).filter(OktaUser.okta_user_id == okta_user_id).first()
+        if not user:
+            return None
+        # Note: Password verification is not applicable for Okta users in this context
+        return user
+
+    def get_okta_user_by_oktaid(self, okta_user_id: str) -> Optional[OktaUser]:
+        return self.db.query(OktaUser).filter(OktaUser.okta_user_id == okta_user_id).first()
+
+    def get_okta_users_by_firstname(self, first_name: str) -> list[OktaUser]:
+        return self.db.query(OktaUser).filter(OktaUser.first_name == first_name).all()
+
+    def get_okta_users_by_lastname(self, last_name: str) -> list[OktaUser]:
+        return self.db.query(OktaUser).filter(OktaUser.last_name == last_name).all()
+
+    def search_okta_users_by_email(self, email_substring: str) -> list[OktaUser]:
+        return self.db.query(OktaUser).filter(OktaUser.email.ilike(f"%{email_substring}%")).all()
+
     def update_user(self, user_id: str, user_update: UserUpdate) -> User:
         user = self.get_user_by_id(user_id)
         if not user:
@@ -84,7 +213,22 @@ class AuthService:
         self.db.commit()
         self.db.refresh(user)
         return user
-    
+
+    def update_okta_user(self, update_data: OktaUserUpdate) -> OktaUser:
+        user = self.get_okta_user_by_oktaid(update_data.okta_user_id)
+        if not user:
+            raise NotFoundException("Okta user not found")
+
+        update_fields = update_data.dict(exclude_unset=True)
+        update_fields.pop("okta_user_id")  # don't overwrite the ID
+
+        for field, value in update_fields.items():
+            setattr(user, field, value)
+
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
     def delete_user(self, user_id: str) -> bool:
         user = self.get_user_by_id(user_id)
         if not user:
