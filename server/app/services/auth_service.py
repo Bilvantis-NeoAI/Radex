@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models import User, OktaUser
 from app.schemas import UserCreate, UserUpdate, OktaUserSchema, OktaUserUpdate
 from app.core.security import get_password_hash, verify_password
-from app.core.exceptions import BadRequestException, NotFoundException, ConflictException
+from app.core.exceptions import BadRequestException, NotFoundException, ConflictException, HTTPException
 from app.config import settings
 import requests
 
@@ -56,76 +56,25 @@ class AuthService:
         return db_user
 
     def get_groups_by_user(self, okta_user_id:str) -> Optional[OktaUser]:
-        print(settings.OKTA_DOMAIN)
-        print(settings.OKTA_CLIENT_ID)
-        print(settings.OKTA_API_TOKEN[:6], "...")
-
+        user_groups = []
         headers = {
             "Authorization": f"SSWS {settings.OKTA_API_TOKEN}",
             "Accept": "application/json"
             }
-        # Get groups assigned to the app
-        url = f"{settings.OKTA_DOMAIN}/api/v1/apps/{settings.OKTA_CLIENT_ID}/groups"
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-
-        groups = response.json()
-        detailed_groups = []
-
-        for group in groups:
-            group_id = group.get("id")
-            if not group_id:
-                continue
-
-            # Get group details
-            group_detail_url = f"{settings.OKTA_DOMAIN}/api/v1/groups/{group_id}"
-            group_response = requests.get(group_detail_url, headers=headers)
-            if group_response.status_code != 200:
-                detailed_groups.append({
-                    "id": group_id,
-                    "name": "Error fetching group name",
-                    "users": []
-                })
-                continue
-
-            group_info = group_response.json()
-            group_name = group_info["profile"].get("name", "Unnamed Group")
-
-            # Get users in the group
-            users_url = f"{settings.OKTA_DOMAIN}/api/v1/groups/{group_id}/users"
-            users_response = requests.get(users_url, headers=headers)
-            users = []
-
-            if users_response.status_code == 200:
-                users_list = users_response.json()
-                for user in users_list:
-                    user_id = user.get("id")
-                    if user_id:
-                        # Get full user info
-                        user_detail_url = f"{settings.OKTA_DOMAIN}/api/v1/users/{user_id}"
-                        user_response = requests.get(user_detail_url, headers=headers)
-                        if user_response.status_code == 200:
-                            user_info = user_response.json()
-                            users.append(user_info)
-                        else:
-                            users.append({"id": user_id, "error": "Failed to fetch user details"})
-            else:
-                users = []
-
-            detailed_groups.append({
-                "id": group_id,
-                "name": group_name,
-                "users": users
-            })
         
-        user_groups = [
-            group["name"]
-            for group in detailed_groups
-            if any(user.get("id") == okta_user_id for user in group["users"])
-        ]
-
-        return user_groups
+        # Get list of groups assigned to the user
+        url = f"{settings.OKTA_DOMAIN}/api/v1/users/{okta_user_id}/groups"
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            groups = response.json()
+            for group in groups:
+                group_name = group["profile"].get("name", "Unnamed Group")
+                print(group["id"], group_name)
+                user_groups.append(group_name)
+            return user_groups
+        else:
+            print("Failed to fetch user groups:", response.status_code, response.text)
+            raise HTTPException(status_code=response.status_code, detail=response.text)
 
     def get_user_role(self, okta_user_id:str) -> Optional[OktaUser]:
         headers = {
