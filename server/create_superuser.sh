@@ -13,9 +13,9 @@ NC='\033[0m' # No Color
 
 # Default values
 DEFAULT_USERNAME="admin"
-DEFAULT_EMAIL="admin@example.com"
-DEFAULT_PASSWORD="admin123456"
-DOCKER_CONTAINER="server-postgres-1"
+DEFAULT_EMAIL="admin@gmail.com"
+DEFAULT_PASSWORD="Admin@123"
+DOCKER_CONTAINER="postgres_db_radex"
 DB_USER="raguser"
 DB_NAME="ragdb"
 

@@ -1,11 +1,12 @@
 from typing import Optional
 from sqlalchemy.orm import Session
-from app.models import User, OktaUser
-from app.schemas import UserCreate, UserUpdate, OktaUserSchema, OktaUserUpdate
+from app.models import User
+from app.schemas import UserCreate, UserUpdate
 from app.core.security import get_password_hash, verify_password
 from app.core.exceptions import BadRequestException, NotFoundException, ConflictException, HTTPException
 from app.config import settings
 import requests
+import uuid
 
 class AuthService:
     def __init__(self, db: Session):
@@ -20,9 +21,12 @@ class AuthService:
         if self.db.query(User).filter(User.username == user_data.username).first():
             raise ConflictException("User with this username already exists")
         
+        user_id = str(uuid.uuid4())
+
         # Create new user
         hashed_password = get_password_hash(user_data.password)
         db_user = User(
+            user_id=user_id,
             email=user_data.email,
             username=user_data.username,
             hashed_password=hashed_password,
@@ -34,20 +38,22 @@ class AuthService:
         self.db.refresh(db_user)
         return db_user
         
-    def create_okta_user(self, user_data: OktaUserSchema) -> OktaUser:
+    def create_okta_user(self, user_data: UserCreate) -> User:
         # Check if user with email already exists
-        db_user = self.db.query(OktaUser).filter(OktaUser.email == user_data.email).first()
+        db_user = self.db.query(User).filter(User.email == user_data.email).first()
         if db_user:
             return db_user
 
         # Create new user
-        db_user = OktaUser(
-            okta_user_id=user_data.okta_user_id,
+        db_user = User(
+            user_id=user_data.user_id,
             email=user_data.email,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
+            username=user_data.username,
             groups=user_data.groups,
             roles=user_data.roles,
+            auth_provider="okta",  # <-- critical
+            is_superuser=True if "Super Administrator" in user_data.roles else False,
+            hashed_password=None
         )
 
         self.db.add(db_user)
@@ -55,7 +61,7 @@ class AuthService:
         self.db.refresh(db_user)
         return db_user
 
-    def get_groups_by_user(self, okta_user_id:str) -> Optional[OktaUser]:
+    def get_groups_by_user(self, okta_user_id:str) -> Optional[User]:
         user_groups = []
         headers = {
             "Authorization": f"SSWS {settings.OKTA_API_TOKEN}",
@@ -76,7 +82,7 @@ class AuthService:
             print("Failed to fetch user groups:", response.status_code, response.text)
             raise HTTPException(status_code=response.status_code, detail=response.text)
 
-    def get_user_role(self, okta_user_id:str) -> Optional[OktaUser]:
+    def get_user_role(self, okta_user_id:str) -> Optional[User]:
         headers = {
         "Authorization": f"SSWS {settings.OKTA_API_TOKEN}",
         "Accept": "application/json"
@@ -100,7 +106,7 @@ class AuthService:
         return user
     
     def get_user_by_id(self, user_id: str) -> Optional[User]:
-        return self.db.query(User).filter(User.id == user_id).first()
+        return self.db.query(User).filter(User.user_id == user_id).first()
     
     def get_user_by_email(self, email: str) -> Optional[User]:
         return self.db.query(User).filter(User.email == email).first()
@@ -108,29 +114,19 @@ class AuthService:
     def get_user_by_username(self, username: str) -> Optional[User]:
         return self.db.query(User).filter(User.username == username).first()
     
-    def authenticate_okta_user(self, okta_user_id: str) -> Optional[OktaUser]:
-        user = self.db.query(OktaUser).filter(OktaUser.okta_user_id == okta_user_id).first()
+    def authenticate_okta_user(self, okta_user_id: str) -> Optional[User]:
+        user = self.db.query(User).filter(User.user_id == okta_user_id).first()
         if not user:
             return None
         # Note: Password verification is not applicable for Okta users in this context
         return user
 
-    def get_okta_user_by_oktaid(self, okta_user_id: str) -> Optional[OktaUser]:
-        return self.db.query(OktaUser).filter(OktaUser.okta_user_id == okta_user_id).first()
-
-    def get_okta_users_by_firstname(self, first_name: str) -> list[OktaUser]:
-        return self.db.query(OktaUser).filter(OktaUser.first_name == first_name).all()
-
-    def get_okta_users_by_lastname(self, last_name: str) -> list[OktaUser]:
-        return self.db.query(OktaUser).filter(OktaUser.last_name == last_name).all()
-
-    def search_okta_users_by_email(self, email_substring: str) -> list[OktaUser]:
-        return self.db.query(OktaUser).filter(OktaUser.email.ilike(f"%{email_substring}%")).all()
-
     def update_user(self, user_id: str, user_update: UserUpdate) -> User:
         user = self.get_user_by_id(user_id)
         if not user:
             raise NotFoundException("User not found")
+        if user.auth_provider == "okta":
+            raise ConflictException("Cannot update okta users details")
         
         update_data = user_update.dict(exclude_unset=True)
         
@@ -138,7 +134,7 @@ class AuthService:
         if "email" in update_data:
             existing_user = self.db.query(User).filter(
                 User.email == update_data["email"],
-                User.id != user_id
+                User.user_id != user_id
             ).first()
             if existing_user:
                 raise ConflictException("User with this email already exists")
@@ -146,7 +142,7 @@ class AuthService:
         if "username" in update_data:
             existing_user = self.db.query(User).filter(
                 User.username == update_data["username"],
-                User.id != user_id
+                User.user_id != user_id
             ).first()
             if existing_user:
                 raise ConflictException("User with this username already exists")
@@ -162,22 +158,7 @@ class AuthService:
         self.db.commit()
         self.db.refresh(user)
         return user
-
-    def update_okta_user(self, update_data: OktaUserUpdate) -> OktaUser:
-        user = self.get_okta_user_by_oktaid(update_data.okta_user_id)
-        if not user:
-            raise NotFoundException("Okta user not found")
-
-        update_fields = update_data.dict(exclude_unset=True)
-        update_fields.pop("okta_user_id")  # don't overwrite the ID
-
-        for field, value in update_fields.items():
-            setattr(user, field, value)
-
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
+    
     def delete_user(self, user_id: str) -> bool:
         user = self.get_user_by_id(user_id)
         if not user:
@@ -223,7 +204,7 @@ class AuthService:
         if "email" in update_data:
             existing_user = self.db.query(User).filter(
                 User.email == update_data["email"],
-                User.id != user_id
+                User.user_id != user_id
             ).first()
             if existing_user:
                 raise ConflictException("User with this email already exists")
@@ -231,7 +212,7 @@ class AuthService:
         if "username" in update_data:
             existing_user = self.db.query(User).filter(
                 User.username == update_data["username"],
-                User.id != user_id
+                User.user_id != user_id
             ).first()
             if existing_user:
                 raise ConflictException("User with this username already exists")

@@ -2,28 +2,27 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Define enum type for auth provider
+CREATE TYPE auth_type AS ENUM ('radex', 'okta');
+
 -- Users table
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id VARCHAR(255) PRIMARY KEY,
+    auth_provider auth_type NOT NULL DEFAULT 'radex',  -- tells how user authenticates
     email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
+    username VARCHAR(100),
+    hashed_password VARCHAR(255),                      -- only for local users
+    groups TEXT[],                                     -- only meaningful for Okta
+    roles TEXT[],
     is_active BOOLEAN DEFAULT true,
     is_superuser BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Okta Users table
-CREATE TABLE okta_users (
-    okta_user_id VARCHAR(255) PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    groups TEXT[],
-    roles VARCHAR(255),
-    is_active BOOLEAN DEFAULT true,
-    is_superuser BOOLEAN DEFAULT false
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_logged_in TIMESTAMP,
+    CHECK (
+        (auth_provider = 'radex' AND hashed_password IS NOT NULL) OR
+        (auth_provider = 'okta' AND hashed_password IS NULL)
+    )
 );
 
 -- Folders table
@@ -31,7 +30,7 @@ CREATE TABLE folders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     parent_id UUID REFERENCES folders(id) ON DELETE CASCADE,
-    owner_id VARCHAR(255) REFERENCES okta_users(okta_user_id) ON DELETE CASCADE,
+    owner_id VARCHAR(255) REFERENCES users(user_id) ON DELETE CASCADE,
     path TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -47,7 +46,7 @@ CREATE TABLE documents (
     file_size BIGINT,
     file_path TEXT NOT NULL,
     metadata JSONB DEFAULT '{}',
-    uploaded_by VARCHAR(255) REFERENCES okta_users(okta_user_id),
+    uploaded_by VARCHAR(255) REFERENCES users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -55,13 +54,13 @@ CREATE TABLE documents (
 -- Permissions table
 CREATE TABLE permissions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES okta_users(okta_user_id) ON DELETE CASCADE,
+    user_id VARCHAR(255) REFERENCES users(user_id) ON DELETE CASCADE,
     folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
     can_read BOOLEAN DEFAULT false,
     can_write BOOLEAN DEFAULT false,
     can_delete BOOLEAN DEFAULT false,
     is_admin BOOLEAN DEFAULT false,
-    granted_by VARCHAR(255) REFERENCES okta_users(okta_user_id),
+    granted_by VARCHAR(255) REFERENCES users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, folder_id)
 );
@@ -81,7 +80,7 @@ CREATE TABLE embeddings (
 -- Chat sessions table
 CREATE TABLE chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id VARCHAR(255) NOT NULL REFERENCES okta_users(okta_user_id) ON DELETE CASCADE,
+    user_id VARCHAR(255) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     title VARCHAR(255) DEFAULT 'New Chat',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -90,7 +89,7 @@ CREATE TABLE chat_sessions (
 CREATE TABLE chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    user_id VARCHAR(255) NOT NULL REFERENCES okta_users(okta_user_id) ON DELETE CASCADE,
+    user_id VARCHAR(255) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     query TEXT NOT NULL,
     response TEXT NOT NULL,
     sources JSONB DEFAULT '[]',   -- list of sources
@@ -106,7 +105,7 @@ CREATE INDEX idx_permissions_user_folder ON permissions(user_id, folder_id);
 CREATE INDEX idx_embeddings_document ON embeddings(document_id);
 CREATE INDEX idx_embeddings_vector ON embeddings USING ivfflat (embedding vector_cosine_ops);
 -- Sessions by user (fetch all chats of a user)
-CREATE INDEX idx_chat_sessions_user ON chat_sessions(okta_user_id);
+CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id);
 
 -- Messages by session (fetch conversation history in order)
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
@@ -116,11 +115,12 @@ CREATE INDEX idx_chat_messages_created_at ON chat_messages(created_at);
 
 -- Insert default admin user (password: admin123456)
 -- Password hash generated with bcrypt for 'admin123456'
-INSERT INTO users (email, username, hashed_password, is_active, is_superuser) 
-VALUES (
-    'admin@gmail.com', 
-    'super_admin', 
-    '$2b$12$lHxIUidRs7M4NTGG7bNu1exg0z/S9r/V7tPsuQABxdfDnL.xmesNC',
-    true, 
-    true
-) ON CONFLICT (email) DO NOTHING;
+-- INSERT INTO users (user_id, email, username, hashed_password, is_active, is_superuser) 
+-- VALUES (
+--     '001',
+--     'admin@gmail.com', 
+--     'super_admin', 
+--     '$2b$12$lHxIUidRs7M4NTGG7bNu1exg0z/S9r/V7tPsuQABxdfDnL.xmesNC',
+--     true, 
+--     true
+-- ) ON CONFLICT (email) DO NOTHING;

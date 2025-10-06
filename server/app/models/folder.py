@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, func, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, func, ForeignKey, UniqueConstraint, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -10,13 +10,13 @@ class Folder(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     parent_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
-    owner_id = Column(String(255), ForeignKey("okta_users.okta_user_id", ondelete="CASCADE"), nullable=False)
-    path = Column(String, nullable=False)
+    owner_id = Column(String(255), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    path = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
-    owner = relationship("OktaUser", foreign_keys=[owner_id])
+    owner = relationship("User", foreign_keys=[owner_id])
     parent = relationship("Folder", remote_side=[id], backref="children")
     documents = relationship("Document", back_populates="folder", cascade="all, delete-orphan")
     permissions = relationship("Permission", back_populates="folder", cascade="all, delete-orphan")

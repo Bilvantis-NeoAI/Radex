@@ -39,6 +39,14 @@ class PermissionGrant(BaseModel):
     can_delete: bool = False
     is_admin: bool = False
 
+class UserInfo(BaseModel):
+    user_id: str
+    username: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
 class PermissionInfo(BaseModel):
     id: UUID
     user_id: str
@@ -49,6 +57,6 @@ class PermissionInfo(BaseModel):
     is_admin: bool
     granted_by: Optional[str]
     created_at: datetime
-    
+    user: Optional[UserInfo] = None
     class Config:
         from_attributes = True

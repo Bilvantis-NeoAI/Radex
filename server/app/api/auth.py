@@ -3,20 +3,27 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas import UserCreate, User, Token, UserLogin, OktaUserSchema, OktaUser
+from app.schemas import UserCreate, User, Token, UserLogin, UserBase
 from app.services.auth_service import AuthService
 from app.core.security import create_access_token
-from app.core.dependencies import get_current_okta_user, get_current_active_user
+from app.core.dependencies import get_current_active_user
 from app.config import settings
+import json
 import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
+from firebase_admin import credentials
+from datetime import datetime
 
 router = APIRouter()
 
 # Initialize Firebase Admin SDK (once)
 if not firebase_admin._apps:
-    cred = credentials.Certificate("app/billgo-llm-firebase-adminsdk-fbsvc-cbf7a7bb2c.json")
-    firebase_admin.initialize_app(cred)
+    if settings.firebase_admin_sdk_json:
+        cred_json = json.loads(settings.firebase_admin_sdk_json)
+        cred = credentials.Certificate(cred_json)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Fallback or error if credentials are not provided
+        print("Firebase Admin SDK JSON not found in environment variables. Firebase not initialized.")
 
 @router.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
 def register(
@@ -58,17 +65,26 @@ def okta_login(
     print(f"the groups for this user are: {groups}")
     roles = auth_service.get_user_role(okta_user_id)
     print(f"ROLE: {roles}")
-    role = roles[0]['label']
+    role = []
+    if len(roles) == 1:
+        role.append(roles[0]['label'])
+    else:
+        for r in roles:
+            role.append(r['label'])
     print(role)
+    print(type(okta_user_id))
+    username = _tokenResponse['firstName'] + "_" + _tokenResponse['lastName']
     if not user:
         # Map Firebase user fields into OktaUser schema
-        user_data = OktaUserSchema(
-            okta_user_id=provider_data[0].get("uid"),                          # ID token we extracted
+        user_data = User(
+            user_id=okta_user_id,                          # ID token we extracted
             email=okta_user["email"],
-            first_name=_tokenResponse['firstName'],
-            last_name=_tokenResponse['lastName'],
+            username=username,
             groups=groups,
-            roles = role,
+            roles =role,
+            auth_provider="okta",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
 
         user = auth_service.create_okta_user(user_data)
@@ -99,7 +115,7 @@ def login(
     
     access_token_expires = timedelta(minutes=settings.jwt_expiration_minutes)
     access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=access_token_expires
+        data={"sub": str(user.user_id)}, expires_delta=access_token_expires
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
@@ -111,15 +127,6 @@ async def get_current_user_info(
     """Get current user information"""
     return current_user
 
-# Endpoint to get current user info
-@router.get("/okta_me", response_model=OktaUserSchema)
-async def get_current_okta_user_info(
-    current_user: OktaUser = Depends(get_current_okta_user)
-):
-    """Get current Okta user information"""
-    print(type(current_user))
-    return current_user
-
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     current_user: User = Depends(get_current_active_user)
@@ -127,7 +134,7 @@ async def refresh_token(
     """Refresh access token"""
     access_token_expires = timedelta(minutes=settings.jwt_expiration_minutes)
     access_token = create_access_token(
-        data={"sub": str(current_user.id)}, expires_delta=access_token_expires
+        data={"sub": str(current_user.user_id)}, expires_delta=access_token_expires
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
@@ -139,5 +146,5 @@ async def delete_current_user(
 ):
     """Delete current user account and all associated data"""
     auth_service = AuthService(db)
-    auth_service.delete_user(str(current_user.id))
+    auth_service.delete_user(str(current_user.user_id))
     return None

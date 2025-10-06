@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 interface User {
-  id: string;
+  user_id: string;
   username: string;
   email: string;
   is_active: boolean;
@@ -35,7 +35,7 @@ interface FolderPermission {
   granted_by: string;
   created_at: string;
   user?: {
-    id: string;
+    user_id: string;
     username: string;
     email: string;
   };
@@ -71,7 +71,7 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
       const permissions = await apiClient.getFolderPermissions(folderId);
       setExistingPermissions(permissions);
     } catch {
-      setError('Failed to load existing permissions');
+      setError('You do not have permission to share access');
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +100,7 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
       // First try to find by email (if query looks like an email)
       if (trimmedQuery.includes('@')) {
         try {
-          const user = await apiClient.findUser({ email: trimmedQuery });
+          const user = await apiClient.find_user({ email: trimmedQuery });
           setSearchResults([user]);
           return;
         } catch {
@@ -110,7 +110,7 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
       
       // Try to find by username
       try {
-        const user = await apiClient.findUser({ username: trimmedQuery });
+        const user = await apiClient.find_user({ username: trimmedQuery });
         setSearchResults([user]);
       } catch {
         // If exact matches fail, no results found
@@ -233,7 +233,7 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
             {searchResults.length > 0 && (
               <div className="border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
                 {searchResults.map((user) => (
-                  <div key={user.id} className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+                  <div key={user.user_id} className="p-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
@@ -245,12 +245,12 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
                         </div>
                       </div>
                       <div>
-                        {isUserAlreadyShared(user.id) ? (
+                        {isUserAlreadyShared(user.user_id) ? (
                           <span className="text-sm text-gray-500">Already has access</span>
                         ) : (
                           <Button
                             size="sm"
-                            onClick={() => handleGrantPermission(user.id)}
+                            onClick={() => handleGrantPermission(user.user_id)}
                             disabled={!user.is_active}
                           >
                             <Plus className="w-4 h-4 mr-1" />

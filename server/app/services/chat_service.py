@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
 from app.models.chat import ChatSession, ChatMessage
 from app.schemas.chat import ChatSessionCreate, ChatMessageCreate, ChatSessionWithMessages
-
+from app.core.exceptions import BadRequestException
 class ChatService:
     def __init__(self, db: Session):
         self.db = db

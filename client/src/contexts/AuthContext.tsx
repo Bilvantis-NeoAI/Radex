@@ -1,13 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, AuthContextType, OktaUser } from '@/types/auth';
+import { User, AuthContextType } from '@/types/auth';
 import apiClient from '@/lib/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | OktaUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [token, setTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await apiClient.login(username, password);
       const { access_token, user: userData } = response;
-      
+      localStorage.setItem('loginType', 'radex');
       setTokenState(access_token);
       setUser(userData);
       apiClient.setToken(access_token);
@@ -49,11 +49,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const tokenResp = await apiClient.syncFirebaseUser(firebaseResult);
     const access_token: string = typeof tokenResp === 'string' ? tokenResp : tokenResp.access_token;
     console.log('Setting token:', access_token);
-
-    const oktaUser: OktaUser = await apiClient.getCurrentUser(); // now backend receives correct token
+    localStorage.setItem('loginType', 'okta');
+    const oktaUser: User = await apiClient.getCurrentUser(); // now backend receives correct token
     setTokenState(access_token);
     setUser(oktaUser);
     localStorage.setItem('auth_token', access_token);
+    
   };
 
   const register = async (email: string, username: string, password: string) => {
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setTokenState(null);
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('loginType');
     apiClient.setToken(null);
     if (typeof window !== 'undefined') {
       window.location.href = '/login';

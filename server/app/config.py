@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     
     # OpenAI
     openai_api_key: str
+
+    # Firebase
+    firebase_admin_sdk_json: Optional[str] = None
     
     # App
     app_name: str = "RAG RBAC System"

@@ -32,22 +32,15 @@ interface AdminUser {
   id: string;
   username: string;
   email: string;
-  is_active: boolean;
-  is_superuser: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OktaUser {
-  okta_user_id: string;
-  email: string;
-  first_name?: string;
-  last_name?: string;
   groups: string[];
   roles?: string;
   is_active: boolean;
   is_superuser: boolean;
+  created_at: string;
+  updated_at: string;
+  last_logged_in: string;
 }
+
 
 interface SystemStats {
   total_users: number;
@@ -62,7 +55,7 @@ export default function AdminPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('users');
-  const [users, setUsers] = useState<OktaUser[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [stats, setStats] = useState<SystemStats>({
     total_users: 0,
     active_users: 0,
@@ -75,7 +68,7 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [, setError] = useState('');
-  const [selectedUser, setSelectedUser] = useState<OktaUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [userModalMode, setUserModalMode] = useState<'create' | 'edit'>('create');
 
@@ -99,12 +92,12 @@ export default function AdminPage() {
       setIsLoading(true);
       
       // Load users from API
-      const usersData = await apiClient.list_okta_users({ limit: 100 });
+      const usersData = await apiClient.list_users({ limit: 100 });
       setUsers(usersData);
       
       // Calculate stats from loaded data
       const totalUsers = usersData.length;
-      const activeUsers = usersData.filter((u: OktaUser) => u.is_active).length;
+      const activeUsers = usersData.filter((u: AdminUser) => u.is_active).length;
       
       setStats({
         total_users: totalUsers,
@@ -141,7 +134,7 @@ export default function AdminPage() {
     setShowUserModal(true);
   };
 
-  const handleEditUser = (user: OktaUser) => {
+  const handleEditUser = (user: AdminUser) => {
     setUserModalMode('edit');
     setSelectedUser(user);
     setShowUserModal(true);
@@ -181,12 +174,12 @@ export default function AdminPage() {
       }
       
       // Load users with filters
-      const usersData = await apiClient.list_okta_users(params);
+      const usersData = await apiClient.list_users(params);
       
       // Client-side search if query exists
       let filteredUsers = usersData;
       if (searchQuery.trim()) {
-        filteredUsers = usersData.filter((user: OktaUser) => 
+        filteredUsers = usersData.filter((user: AdminUser) => 
           user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
           user.email.toLowerCase().includes(searchQuery.toLowerCase())
         );
@@ -197,7 +190,7 @@ export default function AdminPage() {
       // Update stats with all users (not filtered)
       if (filterStatus === 'all' && !searchQuery.trim()) {
         const totalUsers = usersData.length;
-        const activeUsers = usersData.filter((u: OktaUser) => u.is_active).length;
+        const activeUsers = usersData.filter((u: AdminUser) => u.is_active).length;
         
         setStats(prev => ({
           ...prev,
@@ -410,7 +403,7 @@ export default function AdminPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredUsers.map((user) => (
-                    <tr key={user.okta_user_id} className="hover:bg-gray-50">
+                    <tr key={user.user_id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">{user.username}</div>
@@ -451,7 +444,7 @@ export default function AdminPage() {
                           <Button
                             size="sm"
                             variant={user.is_active ? "danger" : "default"}
-                            onClick={() => handleUserStatusToggle(user.okta_user_id, user.is_active)}
+                            onClick={() => handleUserStatusToggle(user.user_id, user.is_active)}
                           >
                             {user.is_active ? (
                               <UserX className="w-4 h-4" />
@@ -462,7 +455,7 @@ export default function AdminPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleDeleteUser(user.okta_user_id, user.username)}
+                            onClick={() => handleDeleteUser(user.user_id, user.username)}
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
                           >
                             <Trash2 className="w-4 h-4" />

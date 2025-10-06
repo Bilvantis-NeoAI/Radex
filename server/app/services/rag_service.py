@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.config import settings
 from app.core.exceptions import BadRequestException, PermissionDeniedException
-from app.services.permission_service import PermissionService, Okta_PermissionService
+from app.services.permission_service import PermissionService
 from app.services.embedding_service import EmbeddingService
 from app.services.chat_service import ChatService   
 from app.schemas import RAGQuery, RAGResponse, RAGChunk, ChatMessageCreate
@@ -16,7 +16,6 @@ class RAGService:
         self.db = db
         self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
         self.permission_service = PermissionService(db)
-        self.okta_permission_service = Okta_PermissionService(db)
         self.embedding_service = EmbeddingService(db)
     
     async def query(
@@ -123,7 +122,7 @@ class RAGService:
     ) -> List[UUID]:
         """Get list of folder IDs that user can access"""
         # Get all accessible folders for user
-        accessible_folders = self.okta_permission_service.get_user_accessible_folders(user_id)
+        accessible_folders = self.permission_service.get_user_accessible_folders(user_id)
         accessible_folder_ids = [folder.id for folder in accessible_folders]
         
         # If specific folders were requested, filter to only include accessible ones
@@ -184,7 +183,7 @@ Answer:"""
     
     def get_queryable_folders(self, user_id: str) -> List[Dict[str, Any]]:
         """Get list of folders that user can query"""
-        accessible_folders = self.okta_permission_service.get_user_accessible_folders(user_id)
+        accessible_folders = self.permission_service.get_user_accessible_folders(user_id)
         
         result = []
         for folder in accessible_folders:

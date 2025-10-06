@@ -1,18 +1,24 @@
+export type AuthProvider = 'radex' | 'okta';
+
 export interface User {
-  id: string;
+  user_id: string;
   email: string;
   username: string;
+  auth_provider: AuthProvider; // NEW — matches backend enum
+  groups?: string[]; // Optional
+  roles?: string; // Optional
+  last_logged_in?: string;
   is_active: boolean;
   is_superuser: boolean;
   created_at: string;
 }
 
-export interface OktaUser {
-  okta_user_id: string;
-  email: string;
-  first_name?: string;
-  last_name?: string;
-}
+// export interface OktaUser {
+//   okta_user_id: string;
+//   email: string;
+//   first_name?: string;
+//   last_name?: string;
+// }
 
 export interface LoginRequest {
   username: string;
@@ -33,7 +39,7 @@ export interface AuthResponse {
 }
 
 export interface AuthContextType {
-  user: User | OktaUser | null;
+  user: User | null;
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
   oktaLogin: (firebaseResult: any) => Promise<void>;

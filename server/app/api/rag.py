@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database import get_db
 from app.schemas import RAGQuery, RAGResponse
-from app.models import User as UserModel, OktaUser
-from app.core.dependencies import get_current_active_user, get_current_okta_user
+from app.models import User as UserModel
+from app.core.dependencies import get_current_active_user
 from app.core.exceptions import BadRequestException, PermissionDeniedException
 from app.services.rag_service import RAGService
 
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/query", response_model=RAGResponse)
 async def rag_query(
     rag_query: RAGQuery,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Submit a RAG query and get an AI-generated response with sources"""
@@ -22,7 +22,7 @@ async def rag_query(
     
     try:
         response = await rag_service.query(
-            user_id=current_user.okta_user_id,
+            user_id=current_user.user_id,
             rag_query=rag_query
         )
         return response
@@ -36,20 +36,20 @@ async def rag_query(
 
 @router.get("/folders")
 def get_queryable_folders(
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> List[Dict[str, Any]]:
     """Get list of folders that user can query"""
     rag_service = RAGService(db)
 
-    folders = rag_service.get_queryable_folders(current_user.okta_user_id)
+    folders = rag_service.get_queryable_folders(current_user.user_id)
     return folders
 
 @router.post("/suggest-queries")
 async def suggest_related_queries(
     original_query: str,
     folder_ids: List[str] = None,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, List[str]]:
     """Get suggested related queries based on available content"""
@@ -65,7 +65,7 @@ async def suggest_related_queries(
             raise BadRequestException("Invalid folder ID format")
     
     suggestions = await rag_service.suggest_related_queries(
-        user_id=current_user.okta_user_id,
+        user_id=current_user.user_id,
         original_query=original_query,
         folder_ids=folder_uuid_list
     )
@@ -74,7 +74,7 @@ async def suggest_related_queries(
 
 @router.get("/health")
 def rag_health_check(
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Check RAG system health and user's access"""
@@ -90,7 +90,7 @@ def rag_health_check(
     
     return {
         "status": "healthy",
-        "user_id": str(current_user.okta_user_id),
+        "user_id": str(current_user.user_id),
         "accessible_folders": total_folders,
         "queryable_folders": queryable_folders_count,
         "total_documents": total_documents,

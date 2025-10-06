@@ -7,10 +7,10 @@ from app.schemas import (
     FolderCreate, FolderUpdate, Folder, FolderWithPermissions,
     PermissionGrant, PermissionInfo
 )
-from app.models import Folder as FolderModel, User as UserModel, OktaUser
-from app.core.dependencies import get_current_active_user, get_current_okta_user
+from app.models import Folder as FolderModel, User as UserModel
+from app.core.dependencies import get_current_active_user
 from app.core.exceptions import NotFoundException, ConflictException, PermissionDeniedException
-from app.services.permission_service import PermissionService, Okta_PermissionService
+from app.services.permission_service import PermissionService
 
 router = APIRouter()
 
@@ -26,12 +26,12 @@ def build_folder_path(db: Session, parent_id: UUID = None, folder_name: str = ""
 
 @router.get("/", response_model=List[FolderWithPermissions])
 async def list_folders(
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """List all folders accessible to the current user"""
-    permission_service = Okta_PermissionService(db)
-    folders = permission_service.get_user_accessible_folders(current_user.okta_user_id)
+    permission_service = PermissionService(db)
+    folders = permission_service.get_user_accessible_folders(current_user.user_id)
     
     # Add permission information to each folder
     folders_with_permissions = []
@@ -45,9 +45,9 @@ async def list_folders(
             "created_at": folder.created_at,
             "updated_at": folder.updated_at,
             "can_read": True,  # If they can see it, they can read it
-            "can_write": permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "write"),
-            "can_delete": permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "delete"),
-            "is_admin": folder.owner_id == current_user.okta_user_id or permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "admin")
+            "can_write": permission_service.check_folder_permission(current_user.user_id, folder.id, "write"),
+            "can_delete": permission_service.check_folder_permission(current_user.user_id, folder.id, "delete"),
+            "is_admin": folder.owner_id == current_user.user_id or permission_service.check_folder_permission(current_user.user_id, folder.id, "admin")
         }
         folders_with_permissions.append(FolderWithPermissions(**folder_dict))
     
@@ -56,15 +56,15 @@ async def list_folders(
 @router.post("/", response_model=Folder, status_code=status.HTTP_201_CREATED)
 async def create_folder(
     folder_data: FolderCreate,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create a new folder"""
-    permission_service = Okta_PermissionService(db)
+    permission_service = PermissionService(db)
     
     # If parent folder is specified, check write permission
     if folder_data.parent_id:
-        permission_service.check_folder_access(current_user.okta_user_id, folder_data.parent_id, "write")
+        permission_service.check_folder_access(current_user.user_id, folder_data.parent_id, "write")
         
         # Check if folder with same name exists in parent
         existing = db.query(FolderModel).filter(
@@ -78,7 +78,7 @@ async def create_folder(
         existing = db.query(FolderModel).filter(
             FolderModel.name == folder_data.name,
             FolderModel.parent_id == None,
-            FolderModel.owner_id == current_user.okta_user_id
+            FolderModel.owner_id == current_user.user_id
         ).first()
         if existing:
             raise ConflictException("Root folder with this name already exists")
@@ -90,7 +90,7 @@ async def create_folder(
     new_folder = FolderModel(
         name=folder_data.name,
         parent_id=folder_data.parent_id,
-        owner_id=current_user.okta_user_id,
+        owner_id=current_user.user_id,
         path=folder_path
     )
     db.add(new_folder)
@@ -102,12 +102,12 @@ async def create_folder(
 @router.get("/{folder_id}", response_model=FolderWithPermissions)
 async def get_folder(
     folder_id: UUID,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get folder details"""
-    permission_service = Okta_PermissionService(db)
-    permission_service.check_folder_access(current_user.okta_user_id, folder_id, "read")
+    permission_service = PermissionService(db)
+    permission_service.check_folder_access(current_user.user_id, folder_id, "read")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
@@ -122,9 +122,9 @@ async def get_folder(
         "created_at": folder.created_at,
         "updated_at": folder.updated_at,
         "can_read": True,
-        "can_write": permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "write"),
-        "can_delete": permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "delete"),
-        "is_admin": folder.owner_id == current_user.okta_user_id or permission_service.check_folder_permission(current_user.okta_user_id, folder.id, "admin")
+        "can_write": permission_service.check_folder_permission(current_user.user_id, folder.id, "write"),
+        "can_delete": permission_service.check_folder_permission(current_user.user_id, folder.id, "delete"),
+        "is_admin": folder.owner_id == current_user.user_id or permission_service.check_folder_permission(current_user.user_id, folder.id, "admin")
     }
     
     return FolderWithPermissions(**folder_dict)
@@ -133,12 +133,12 @@ async def get_folder(
 async def update_folder(
     folder_id: UUID,
     folder_update: FolderUpdate,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Update folder"""
-    permission_service = Okta_PermissionService(db)
-    permission_service.check_folder_access(current_user.okta_user_id, folder_id, "write")
+    permission_service = PermissionService(db)
+    permission_service.check_folder_access(current_user.user_id, folder_id, "write")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
@@ -165,12 +165,12 @@ async def update_folder(
 @router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_folder(
     folder_id: UUID,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Delete folder and all its contents"""
-    permission_service = Okta_PermissionService(db)
-    permission_service.check_folder_access(current_user.okta_user_id, folder_id, "delete")
+    permission_service = PermissionService(db)
+    permission_service.check_folder_access(current_user.user_id, folder_id, "delete")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
@@ -183,14 +183,14 @@ async def delete_folder(
 async def grant_folder_permission(
     folder_id: UUID,
     permission_grant: PermissionGrant,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Grant permission to a user for a folder"""
-    permission_service = Okta_PermissionService(db)
+    permission_service = PermissionService(db)
     
     permission = permission_service.grant_permission(
-        granter_id=current_user.id,
+        granter_id=current_user.user_id,
         user_id=permission_grant.user_id,
         folder_id=folder_id,
         can_read=permission_grant.can_read,
@@ -204,18 +204,18 @@ async def grant_folder_permission(
 @router.get("/{folder_id}/permissions", response_model=List[PermissionInfo])
 async def list_folder_permissions(
     folder_id: UUID,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """List all permissions for a folder"""
-    permission_service = Okta_PermissionService(db)
+    permission_service = PermissionService(db)
     
     # Check if user has admin access to the folder or is superuser
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
         raise NotFoundException("Folder not found")
 
-    if not current_user.is_superuser and folder.owner_id != current_user.okta_user_id and not permission_service.check_folder_permission(current_user.okta_user_id, folder_id, "admin"):
+    if not current_user.is_superuser and folder.owner_id != current_user.user_id and not permission_service.check_folder_permission(current_user.user_id, folder_id, "admin"):
         raise PermissionDeniedException("You don't have permission to view folder permissions")
     
     permissions = permission_service.get_folder_permissions(folder_id)
@@ -225,14 +225,14 @@ async def list_folder_permissions(
 async def revoke_folder_permission(
     folder_id: UUID,
     user_id: str,
-    current_user: OktaUser = Depends(get_current_okta_user),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Revoke a user's permission for a folder"""
-    permission_service = Okta_PermissionService(db)
+    permission_service = PermissionService(db)
     
     success = permission_service.revoke_permission(
-        revoker_id=current_user.okta_user_id,
+        revoker_id=current_user.user_id,
         user_id=user_id,
         folder_id=folder_id
     )

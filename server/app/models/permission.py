@@ -8,19 +8,19 @@ class Permission(Base):
     __tablename__ = "permissions"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(String(255), ForeignKey("okta_users.okta_user_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(255), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=False)
     can_read = Column(Boolean, default=False)
     can_write = Column(Boolean, default=False)
     can_delete = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
-    granted_by = Column(String(255), ForeignKey("okta_users.okta_user_id"), nullable=True)
+    granted_by = Column(String(255), ForeignKey("users.user_id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    user = relationship("OktaUser", foreign_keys=[user_id])
+    user = relationship("User", foreign_keys=[user_id])
     folder = relationship("Folder", back_populates="permissions")
-    granter = relationship("OktaUser", foreign_keys=[granted_by])
+    granter = relationship("User", foreign_keys=[granted_by])
 
     __table_args__ = (
         UniqueConstraint('user_id', 'folder_id', name='_user_folder_permission_uc'),

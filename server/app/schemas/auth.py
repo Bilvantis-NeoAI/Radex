@@ -2,17 +2,29 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
+from enum import Enum
+
+class AuthProvider(str, Enum):
+    radex = "radex"
+    okta = "okta"
 
 class UserBase(BaseModel):
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=100)
+    auth_provider: AuthProvider = AuthProvider.radex
+    groups: Optional[List[str]] = None  # only for Okta users
+    roles:Optional[List[str]] = None
     is_active: bool = True
     is_superuser: bool = False
 
 class UserCreate(BaseModel):
+    user_id: Optional[str] = None
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
+    auth_provider: AuthProvider = AuthProvider.radex
+    groups: Optional[List[str]] = None
+    roles: Optional[List[str]] = None
     is_active: bool = True
     # is_superuser removed for security - only set via database/admin
 
@@ -20,11 +32,15 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    auth_provider: Optional[AuthProvider] = None
+    groups: Optional[List[str]] = None
+    roles: Optional[List[str]] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
 
 class UserInDB(UserBase):
-    id: UUID
+    user_id: str
+    last_logged_in: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     
@@ -44,32 +60,3 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None
-
-class OktaUserSchema(BaseModel):
-    okta_user_id: str
-    email: EmailStr
-    first_name: str
-    last_name: str
-    groups: Optional[List[str]] = None
-    roles: Optional[str] = None
-    is_active: bool = True
-    is_superuser: bool = False
-
-    class Config:
-        orm_mode = True
-
-class OktaUserUpdate(BaseModel):
-    okta_user_id: str  # required to identify the user
-    email: Optional[EmailStr] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    groups: Optional[List[str]] = None
-    roles: Optional[str] = None
-    is_active: Optional[bool] = None
-    is_superuser: Optional[bool] = None
-    
-    class Config:
-        orm_mode = True
-
-class OktaUser(OktaUserSchema):
-    pass

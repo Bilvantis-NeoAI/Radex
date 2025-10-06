@@ -213,7 +213,3 @@ __marimo__/
 # Re-include the Next.js client lib directory
 !client/src/lib/
 !client/src/lib/**
-
-# Secret Files
-server/app/billgo-llm-firebase-adminsdk-fbsvc-cbf7a7bb2c.json
-client/src/lib/firebaseconfig.ts

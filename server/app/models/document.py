@@ -14,11 +14,11 @@ class Document(Base):
     file_size = Column(BigInteger)
     file_path = Column(String, nullable=False)
     doc_metadata = Column("metadata", JSON, default={})
-    uploaded_by = Column(String(255), ForeignKey("okta_users.okta_user_id"), nullable=True)
+    uploaded_by = Column(String(255), ForeignKey("users.user_id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     folder = relationship("Folder", back_populates="documents")
-    uploader = relationship("OktaUser", foreign_keys=[uploaded_by])
+    uploader = relationship("User", foreign_keys=[uploaded_by])
     embeddings = relationship("Embedding", back_populates="document", cascade="all, delete-orphan")

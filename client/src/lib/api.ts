@@ -27,6 +27,13 @@ class APIClient {
 				config.headers = config.headers || {};
 				config.headers.Authorization = `Bearer ${this.token}`;
 			}
+			
+			// Attach login type from localStorage
+			if (typeof window !== 'undefined') {
+				const loginType = localStorage.getItem('loginType') || 'radex';
+				config.headers['X-Login-Type'] = loginType;
+			}
+			
 			if (this.abortController) {
 				config.signal = this.abortController.signal;
 			}
@@ -67,7 +74,7 @@ class APIClient {
 		});
 		const access_token: string = tokenResp.data.access_token;
 		this.setToken(access_token);
-		const user = await this.getCurrentUser();
+		const user = await this.getCurrentUser({ headers: { "X-Login-Type": "radex" } });
 		return {
 			access_token,
 			token_type: tokenResp.data.token_type ?? 'bearer',
@@ -89,9 +96,9 @@ class APIClient {
 		return this.login(payload.username, payload.password);
 	}
 
-	async getCurrentUser(): Promise<OktaUser> {
-		const resp = await this.http.get('/auth/okta_me');
-		return resp.data as OktaUser;
+	async getCurrentUser(): Promise<User> {
+		const resp = await this.http.get('/auth/me');
+		return resp.data as User;
 	}
 
 	// Folders
@@ -139,8 +146,8 @@ class APIClient {
 	}
 
 	// Users (admin)
-	async list_okta_users(params?: Record<string, unknown>): Promise<User[]> {
-		const resp = await this.http.get('/users/okta', { params });
+	async list_users(params?: Record<string, unknown>): Promise<User[]> {
+		const resp = await this.http.get('/users/', { params });
 		return resp.data as User[];
 	}
 
@@ -158,8 +165,8 @@ class APIClient {
 		await this.http.delete(`/users/${userId}`);
 	}
 
-	async find_okta_user(params: { email?: string; username?: string }): Promise<User> {
-		const resp = await this.http.get('/users/okta_find', { params });
+	async find_user(params: { email?: string; username?: string }): Promise<User> {
+		const resp = await this.http.get('/users/find', { params });
 		return resp.data as User;
 	}
 

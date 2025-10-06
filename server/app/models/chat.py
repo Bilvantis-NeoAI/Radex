@@ -10,12 +10,12 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(String(255), ForeignKey("okta_users.okta_user_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(255), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     title = Column(String(255), default="New Chat")
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     # Relationships
-    user = relationship("OktaUser", back_populates="chat_sessions")
+    user = relationship("User", back_populates="chat_sessions")
     messages = relationship(
         "ChatMessage",
         back_populates="session",
@@ -29,7 +29,7 @@ class ChatMessage(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id = Column(UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(String(255), ForeignKey("okta_users.okta_user_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(255), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     query = Column(Text, nullable=False)
     response = Column(Text, nullable=False)
     sources = Column(JSONB, default=list)   # <-- new
@@ -38,4 +38,4 @@ class ChatMessage(Base):
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
-    user = relationship("OktaUser", back_populates="chat_messages")
+    user = relationship("User", back_populates="chat_messages")
