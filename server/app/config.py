@@ -3,11 +3,11 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Okta
-    OKTA_CLIENT_ID: str
-    OKTA_CLIENT_SECRET: str
-    OKTA_DOMAIN: str
-    OKTA_REDIRECT_URI: str
-    OKTA_API_TOKEN: str
+    OKTA_CLIENT_ID: Optional[str] = None
+    OKTA_CLIENT_SECRET: Optional[str] = None
+    OKTA_DOMAIN: Optional[str] = None
+    OKTA_REDIRECT_URI: Optional[str] = None
+    OKTA_API_TOKEN: Optional[str] = None
 
     # Database
     database_url: str
