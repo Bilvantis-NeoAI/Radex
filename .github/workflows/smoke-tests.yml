@@ -2,9 +2,9 @@ name: Smoke Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 jobs:
   smoke-tests:
@@ -27,8 +27,6 @@ jobs:
 
       redis:
         image: redis:7-alpine
-        env:
-          REDIS_PASSWORD: changeme
         ports:
           - 6379:6379
         options: >-
@@ -38,20 +36,18 @@ jobs:
           --health-retries 5
 
       minio:
-        image: minio/minio:edge-cicd
+        image: minio/minio
         env:
           MINIO_ROOT_USER: minioadmin
           MINIO_ROOT_PASSWORD: minioadmin
         ports:
           - 9000:9000
-          - 9001:9001
         options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
           --health-interval 30s
           --health-timeout 20s
           --health-retries 3
-        volumes:
-          - /tmp/minio-data:/data
+          --entrypoint "sh -c 'mkdir -p /data/documents && minio server /data'"
 
     steps:
     - uses: actions/checkout@v4
@@ -95,11 +91,27 @@ jobs:
           sleep 2
         done
         
-        # Wait for MinIO (simplified check)
-        until curl -f http://localhost:9000/minio/health/live; do
-          echo "Waiting for MinIO..."
+        # Wait for MinIO
+        MAX_RETRIES=30
+        RETRY_COUNT=0
+        until curl -f http://localhost:9000/minio/health/live 2>/dev/null || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+          echo "Waiting for MinIO... ($RETRY_COUNT/$MAX_RETRIES)"
           sleep 5
+          RETRY_COUNT=$((RETRY_COUNT + 1))
         done
+
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+          echo "MinIO failed to start"
+          exit 1
+        fi
+
+    - name: Create MinIO bucket
+      run: |
+        # Install MinIO client
+        wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
+        chmod +x mc
+        ./mc alias set local http://localhost:9000 minioadmin minioadmin
+        ./mc mb local/documents --ignore-existing || true
 
     - name: Initialize database
       working-directory: ./server
@@ -108,7 +120,7 @@ jobs:
         PGPASSWORD=changeme psql -h localhost -U raguser -d ragdb -f init.sql || echo "Database already initialized"
       env:
         DATABASE_URL: postgresql+psycopg://raguser:changeme@localhost:5432/ragdb
-        REDIS_URL: redis://:changeme@localhost:6379/0
+        REDIS_URL: redis://localhost:6379/0
         MINIO_ENDPOINT: localhost:9000
         MINIO_ACCESS_KEY: minioadmin
         MINIO_SECRET_KEY: minioadmin
@@ -131,7 +143,7 @@ jobs:
         curl -f http://localhost:8000/health || (echo "Server failed to start" && exit 1)
       env:
         DATABASE_URL: postgresql+psycopg://raguser:changeme@localhost:5432/ragdb
-        REDIS_URL: redis://:changeme@localhost:6379/0
+        REDIS_URL: redis://localhost:6379/0
         MINIO_ENDPOINT: localhost:9000
         MINIO_ACCESS_KEY: minioadmin
         MINIO_SECRET_KEY: minioadmin
@@ -149,7 +161,7 @@ jobs:
         pytest tests/smoke/ -v --tb=short
       env:
         DATABASE_URL: postgresql+psycopg://raguser:changeme@localhost:5432/ragdb
-        REDIS_URL: redis://:changeme@localhost:6379/0
+        REDIS_URL: redis://localhost:6379/0
         MINIO_ENDPOINT: localhost:9000
         MINIO_ACCESS_KEY: minioadmin
         MINIO_SECRET_KEY: minioadmin
