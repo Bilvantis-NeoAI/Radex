@@ -9,7 +9,7 @@ on:
 jobs:
   smoke-tests:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: pgvector/pgvector:pg15
@@ -84,13 +84,13 @@ jobs:
           echo "Waiting for PostgreSQL..."
           sleep 2
         done
-        
+
         # Wait for Redis
         until redis-cli -h localhost -p 6379 ping; do
           echo "Waiting for Redis..."
           sleep 2
         done
-        
+
         # Wait for MinIO
         MAX_RETRIES=30
         RETRY_COUNT=0
