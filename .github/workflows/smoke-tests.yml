@@ -47,7 +47,6 @@ jobs:
           --health-interval 30s
           --health-timeout 20s
           --health-retries 3
-          --entrypoint "sh -c 'mkdir -p /data/documents && minio server /data'"
 
     steps:
     - uses: actions/checkout@v4
