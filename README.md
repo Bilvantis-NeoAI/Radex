@@ -6,7 +6,9 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Role-Based Acce
 
 ### Core Capabilities
 - **🤖 AI-Powered RAG**: Query documents using natural language with OpenAI-powered responses and source citations
-- **🔐 Secure Authentication**: JWT-based authentication with bcrypt password hashing
+- **🔐 Secure Authentication**: JWT-based authentication with bcrypt password hashing, 
+- **Okta Integration** for enterprise-grade identity management
+- **Firebase Authentication** for flexible user management.
 - **👥 Role-Based Access Control**: Granular permissions at folder and document levels
 - **📁 Hierarchical Organization**: Nested folder structure with permission inheritance
 - **📄 Multi-Format Support**: Process PDF, Word, Text, Markdown, and HTML documents
@@ -21,6 +23,8 @@ A comprehensive Retrieval-Augmented Generation (RAG) system with Role-Based Acce
 - **Admin Dashboard**: Comprehensive user and system management
 - **Health Monitoring**: Built-in health checks for all services
 - **Caching Layer**: Redis for improved performance
+- **Okta Integration**: Seamless integration with Okta for user authentication and authorization.
+- **Firebase Integration**: Leverage Firebase for real-time features and enhanced user experience.
 
 ## 🏗️ Architecture
 
@@ -44,6 +48,8 @@ RADEX/
 - Redis for caching
 - MinIO for S3-compatible object storage
 - OpenAI API for embeddings & RAG
+- **Okta**: For enterprise-grade identity management.
+- **Firebase Admin SDK**: For backend interaction with Firebase services.
 
 **Frontend:**
 - Next.js 14 with App Router
@@ -53,6 +59,7 @@ RADEX/
 - React Hook Form with Zod validation
 - Lucide React for icons
 - Axios for API communication
+- **Firebase Client SDK**: For client-side authentication and real-time features.
 
 ## 📋 Prerequisites
 
@@ -85,6 +92,16 @@ cp .env.example .env
 OPENAI_API_KEY=your-openai-api-key-here
 JWT_SECRET_KEY=change-this-to-a-secure-random-string
 
+# Okta Credentials
+OKTA_CLIENT_ID=your-okta-client-id
+OKTA_CLIENT_SECRET=your-okta-client-secret
+OKTA_DOMAIN=https://your-okta-domain.okta.com
+OKTA_REDIRECT_URI=http://localhost:8000/callback
+OKTA_API_TOKEN=your-okta-api-token
+
+# Firebase Admin SDK (JSON string)
+FIREBASE_ADMIN_SDK_JSON={ "type": "service_account", ... }
+
 # Database (defaults work for Docker)
 DATABASE_URL=postgresql://raguser:changeme@postgres:5432/ragdb
 
@@ -109,6 +126,14 @@ cp .env.local.example .env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_APP_NAME=RADEX
 NEXT_PUBLIC_MAX_FILE_SIZE=10485760
+
+# Firebase Client SDK
+NEXT_PUBLIC_FIREBASE_API_KEY=your-firebase-api-key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-firebase-auth-domain
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-firebase-project-id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-firebase-storage-bucket
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-firebase-messaging-sender-id
+NEXT_PUBLIC_FIREBASE_APP_ID=your-firebase-app-id
 ```
 
 ### 3. Start the Application
@@ -393,6 +418,12 @@ lsof -i :8000  # Check what's using port 8000
 - Ensure server is running on port 8000
 - Check NEXT_PUBLIC_API_URL in client/.env.local
 - Verify no firewall blocking connections
+
+**Firebase Initialization Error**
+- Verify Firebase client environment variables in client/.env.local
+- Ensure Firebase project settings are correct
+- Check network connectivity to Firebase services
+- For `FIREBASE_ADMIN_SDK_JSON`, ensure the JSON string is correctly formatted and escaped in the server's .env file.
 
 ## 🔒 Security Considerations
 
