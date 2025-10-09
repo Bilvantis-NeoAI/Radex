@@ -1,5 +1,6 @@
 from typing import List
 from uuid import UUID
+# from app.models import document
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -11,7 +12,9 @@ from app.core.exceptions import NotFoundException, BadRequestException, Permissi
 from app.services.permission_service import PermissionService
 from app.services.document_service import DocumentService
 from app.services.embedding_service import EmbeddingService
+from app.logger.logger import setup_logger
 import io
+logger = setup_logger()
 
 router = APIRouter()
 
@@ -23,6 +26,7 @@ async def upload_document(
     db: Session = Depends(get_db)
 ):
     """Upload a document to a folder"""
+    logger.info(f"Starting document upload to folder {folder_id} by user {current_user.user_id}")
     permission_service = PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
@@ -36,14 +40,17 @@ async def upload_document(
         folder_id=folder_id,
         uploaded_by=current_user.user_id
     )
+
+    logger.info(f"Document uploaded successfully: {document.filename}")
     
     # Start background task to process embeddings
     try:
         await embedding_service.process_document_embeddings(document.id)
     except Exception as e:
         # Log the error but don't fail the upload
-        print(f"Failed to process embeddings for document {document.id}: {e}")
-    
+        logger.error(f"Failed to process embeddings for document {document.id}: {e}")
+
+    logger.info(f"Processing of Document {document.filename} completed")
     return DocumentUploadResponse(
         id=document.id,
         filename=document.filename,
@@ -60,36 +67,47 @@ def get_document_metadata(
     db: Session = Depends(get_db)
 ):
     """Get document metadata"""
-    permission_service = PermissionService(db)
-    document_service = DocumentService(db)
-    embedding_service = EmbeddingService(db)
-    
-    document = document_service.get_document(document_id)
-    if not document:
-        raise NotFoundException("Document not found")
-    
-    # Check read permission for folder
-    permission_service.check_folder_access(current_user.user_id, document.folder_id, "read")
-    
-    # Check embedding status
-    embeddings = embedding_service.get_document_embeddings(document_id)
-    embedding_status = "completed" if embeddings and len(embeddings) > 0 else "pending"
-    
-    # Create document with status
-    doc_dict = {
-        "id": document.id,
-        "filename": document.filename,
-        "file_type": document.file_type,
-        "folder_id": document.folder_id,
-        "file_size": document.file_size,
-        "file_path": document.file_path,
-        "uploaded_by": document.uploaded_by,
-        "created_at": document.created_at,
-        "updated_at": document.updated_at,
-        "embedding_status": embedding_status
-    }
-    
-    return Document(**doc_dict)
+    logger.info(f"Retrieving metadata for document {document_id} by user {current_user.user_id}")
+    try:
+        permission_service = PermissionService(db)
+        document_service = DocumentService(db)
+        embedding_service = EmbeddingService(db)
+        
+        document = document_service.get_document(document_id)
+        if not document:
+            raise NotFoundException("Document not found")
+        
+        # Check read permission for folder
+        permission_service.check_folder_access(current_user.user_id, document.folder_id, "read")
+        
+        # Check embedding status
+        embeddings = embedding_service.get_document_embeddings(document_id)
+        embedding_status = "completed" if embeddings and len(embeddings) > 0 else "pending"
+        
+        # Create document with status
+        doc_dict = {
+            "id": document.id,
+            "filename": document.filename,
+            "file_type": document.file_type,
+            "folder_id": document.folder_id,
+            "file_size": document.file_size,
+            "file_path": document.file_path,
+            "uploaded_by": document.uploaded_by,
+            "created_at": document.created_at,
+            "updated_at": document.updated_at,
+            "embedding_status": embedding_status
+        }
+        logger.info(f"Retrieved metadata for document {document.filename}")        
+        return Document(**doc_dict)
+    except PermissionDeniedException as e:
+        logger.warning(f"Permission denied for user {current_user.user_id} on document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except NotFoundException as e:
+        logger.error(f"Document not found: {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error retrieving document metadata for {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.get("/documents/{document_id}/download")
 async def download_document(
@@ -98,41 +116,52 @@ async def download_document(
     db: Session = Depends(get_db)
 ):
     """Download a document"""
-    permission_service = PermissionService(db)
-    document_service = DocumentService(db)
-    
-    document = document_service.get_document(document_id)
-    if not document:
-        raise NotFoundException("Document not found")
-    
-    # Check read permission for folder
-    permission_service.check_folder_access(current_user.user_id, document.folder_id, "read")
-    
-    # Download from MinIO
-    file_response, filename, file_type = document_service.download_document(document_id)
-    
-    # Create streaming response
-    def iterfile():
-        for chunk in file_response.stream(32*1024):
-            yield chunk
-    
-    # Determine media type
-    media_type = "application/octet-stream"
-    if file_type:
-        type_mapping = {
-            "pdf": "application/pdf",
-            "txt": "text/plain",
-            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "html": "text/html",
-            "md": "text/markdown"
-        }
-        media_type = type_mapping.get(file_type.lower(), "application/octet-stream")
-    
-    return StreamingResponse(
-        iterfile(),
-        media_type=media_type,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+    logger.info(f"Starting download of document {document_id} by user {current_user.user_id}")
+    try:
+        permission_service = PermissionService(db)
+        document_service = DocumentService(db)
+        
+        document = document_service.get_document(document_id)
+        if not document:
+            raise NotFoundException("Document not found")
+        
+        # Check read permission for folder
+        permission_service.check_folder_access(current_user.user_id, document.folder_id, "read")
+        
+        # Download from MinIO
+        file_response, filename, file_type = document_service.download_document(document_id)
+        
+        # Create streaming response
+        def iterfile():
+            for chunk in file_response.stream(32*1024):
+                yield chunk
+        
+        # Determine media type
+        media_type = "application/octet-stream"
+        if file_type:
+            type_mapping = {
+                "pdf": "application/pdf",
+                "txt": "text/plain",
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "html": "text/html",
+                "md": "text/markdown"
+            }
+            media_type = type_mapping.get(file_type.lower(), "application/octet-stream")
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except PermissionDeniedException as e:
+        logger.warning(f"Permission denied for user {current_user.user_id} on document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except NotFoundException as e:
+        logger.error(f"Document not found: {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error downloading document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
@@ -141,18 +170,31 @@ def delete_document(
     db: Session = Depends(get_db)
 ):
     """Delete a document"""
-    permission_service = PermissionService(db)
-    document_service = DocumentService(db)
-    
-    document = document_service.get_document(document_id)
-    if not document:
-        raise NotFoundException("Document not found")
-    
-    # Check delete permission for folder
-    permission_service.check_folder_access(current_user.user_id, document.folder_id, "delete")
-    
-    # Delete document
-    document_service.delete_document(document_id)
+    logger.info(f"Deleting document {document_id} by user {current_user.user_id}")
+    try:
+        permission_service = PermissionService(db)
+        document_service = DocumentService(db)
+        
+        document = document_service.get_document(document_id)
+        if not document:
+            logger.warning(f"Document {document_id} not found for deletion")
+            raise NotFoundException("Document not found")
+        
+        # Check delete permission for folder
+        permission_service.check_folder_access(current_user.user_id, document.folder_id, "delete")
+        
+        # Delete document
+        document_service.delete_document(document_id)
+        logger.info(f"Document {document.filename} deleted successfully")
+    except PermissionDeniedException as e:
+        logger.warning(f"Permission denied for user {current_user.user_id} on document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except NotFoundException as e:
+        logger.error(f"Document not found: {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.get("/folders/{folder_id}/documents", response_model=List[Document])
 def list_folder_documents(
@@ -161,39 +203,52 @@ def list_folder_documents(
     db: Session = Depends(get_db)
 ):
     """List all documents in a folder"""
-    permission_service = PermissionService(db)
-    document_service = DocumentService(db)
-    embedding_service = EmbeddingService(db)
-    
-    # Check read permission for folder
-    permission_service.check_folder_access(current_user.user_id, folder_id, "read")
-    
-    documents = document_service.get_documents_in_folder(folder_id)
-    
-    # Add embedding status to each document
-    documents_with_status = []
-    for doc in documents:
-        doc_dict = {
-            "id": doc.id,
-            "filename": doc.filename,
-            "file_type": doc.file_type,
-            "folder_id": doc.folder_id,
-            "file_size": doc.file_size,
-            "file_path": doc.file_path,
-            "uploaded_by": doc.uploaded_by,
-            "created_at": doc.created_at,
-            "updated_at": doc.updated_at,
-            "embedding_status": "pending"  # Default status
-        }
+    logger.info(f"Listing documents in folder {folder_id} by user {current_user.user_id}")
+    try:
+        permission_service = PermissionService(db)
+        document_service = DocumentService(db)
+        embedding_service = EmbeddingService(db)
         
-        # Check if embeddings exist for this document
-        embeddings = embedding_service.get_document_embeddings(doc.id)
-        if embeddings and len(embeddings) > 0:
-            doc_dict["embedding_status"] = "completed"
+        # Check read permission for folder
+        permission_service.check_folder_access(current_user.user_id, folder_id, "read")
         
-        documents_with_status.append(Document(**doc_dict))
-    
-    return documents_with_status
+        documents = document_service.get_documents_in_folder(folder_id)
+        
+        # Add embedding status to each document
+        documents_with_status = []
+        for doc in documents:
+            doc_dict = {
+                "id": doc.id,
+                "filename": doc.filename,
+                "file_type": doc.file_type,
+                "folder_id": doc.folder_id,
+                "file_size": doc.file_size,
+                "file_path": doc.file_path,
+                "uploaded_by": doc.uploaded_by,
+                "created_at": doc.created_at,
+                "updated_at": doc.updated_at,
+                "embedding_status": "pending"  # Default status
+            }
+            
+            # Check if embeddings exist for this document
+            embeddings = embedding_service.get_document_embeddings(doc.id)
+            if embeddings and len(embeddings) > 0:
+                doc_dict["embedding_status"] = "completed"
+            else:
+                logger.info(f"No embeddings found for document {doc.id}")
+
+            documents_with_status.append(Document(**doc_dict))
+        logger.info(f"Retrieved {len(documents_with_status)} documents from folder {folder_id}")
+        return documents_with_status
+    except PermissionDeniedException as e:
+        logger.warning(f"Permission denied for user {current_user.user_id} on folder {folder_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except NotFoundException as e:
+        logger.error(f"Folder not found: {folder_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error listing documents in folder {folder_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.post("/documents/{document_id}/reprocess-embeddings", status_code=status.HTTP_202_ACCEPTED)
 async def reprocess_document_embeddings(
@@ -202,12 +257,14 @@ async def reprocess_document_embeddings(
     db: Session = Depends(get_db)
 ):
     """Reprocess embeddings for a document"""
+    logger.info(f"Starting reprocessing embeddings for document {document_id} by user {current_user.user_id}")
     permission_service = PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
     document = document_service.get_document(document_id)
     if not document:
+        logger.error(f"Document {document_id} not found for embedding reprocess")
         raise NotFoundException("Document not found")
     
     # Check write permission for folder (needed to reprocess)
@@ -216,8 +273,10 @@ async def reprocess_document_embeddings(
     # Reprocess embeddings
     try:
         await embedding_service.reprocess_document_embeddings(document_id)
+        logger.info(f"Embeddings reprocessed successfully for document {document.filename}")
         return {"message": "Embeddings reprocessed successfully"}
     except Exception as e:
+        logger.error(f"Failed to reprocess embeddings for document {document.filename}: {str(e)}")
         raise BadRequestException(f"Failed to reprocess embeddings: {str(e)}")
 
 @router.get("/documents/{document_id}/embeddings/stats")
@@ -227,16 +286,22 @@ def get_document_embedding_stats(
     db: Session = Depends(get_db)
 ):
     """Get embedding statistics for a document"""
+    logger.info(f"Retrieving embedding stats for document {document_id} by user {current_user.user_id}")
     permission_service = PermissionService(db)
     document_service = DocumentService(db)
     embedding_service = EmbeddingService(db)
     
     document = document_service.get_document(document_id)
     if not document:
+        logger.error(f"Document {document_id} not found for embedding stats")
         raise NotFoundException("Document not found")
     
     # Check read permission for folder
     permission_service.check_folder_access(current_user.user_id, document.folder_id, "read")
-    
-    stats = embedding_service.get_embedding_stats(document_id)
-    return stats
+    try:
+        stats = embedding_service.get_embedding_stats(document_id)
+        logger.info(f"Retrieved embedding stats for document {document.filename}")
+        return stats
+    except Exception as e:
+        logger.error(f"Error retrieving embedding stats for document {document_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

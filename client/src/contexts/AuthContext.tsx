@@ -48,7 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const oktaLogin = async (firebaseResult: any) => {
     const tokenResp = await apiClient.syncFirebaseUser(firebaseResult);
     const access_token: string = typeof tokenResp === 'string' ? tokenResp : tokenResp.access_token;
-    console.log('Setting token:', access_token);
+    console.log("Setting access token from okta login");
+    // console.log('Setting token:', access_token);
     localStorage.setItem('loginType', 'okta');
     const oktaUser: User = await apiClient.getCurrentUser(); // now backend receives correct token
     setTokenState(access_token);

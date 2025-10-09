@@ -11,17 +11,23 @@ from app.models import Folder as FolderModel, User as UserModel
 from app.core.dependencies import get_current_active_user
 from app.core.exceptions import NotFoundException, ConflictException, PermissionDeniedException
 from app.services.permission_service import PermissionService
+from app.logger.logger import setup_logger
+logger = setup_logger()
 
 router = APIRouter()
 
 def build_folder_path(db: Session, parent_id: UUID = None, folder_name: str = "") -> str:
     """Build the full path for a folder"""
+    logger.info(f"Building folder path for {folder_name}")
     if not parent_id:
+        logger.info("No parent_id provided. Using root path: %s", f"/{folder_name}")
         return f"/{folder_name}"
     
     parent = db.query(FolderModel).filter(FolderModel.id == parent_id).first()
     if parent:
+        logger.info(f"Parent folder found: {parent.name}, path: {parent.path}")
         return f"{parent.path}/{folder_name}"
+    logger.info(f"Folder path built as root: /{folder_name}")
     return f"/{folder_name}"
 
 @router.get("/", response_model=List[FolderWithPermissions])
@@ -30,6 +36,7 @@ async def list_folders(
     db: Session = Depends(get_db)
 ):
     """List all folders accessible to the current user"""
+    logger.info(f"Listing folders for user: {current_user.user_id}")
     permission_service = PermissionService(db)
     folders = permission_service.get_user_accessible_folders(current_user.user_id)
     
@@ -50,7 +57,8 @@ async def list_folders(
             "is_admin": folder.owner_id == current_user.user_id or permission_service.check_folder_permission(current_user.user_id, folder.id, "admin")
         }
         folders_with_permissions.append(FolderWithPermissions(**folder_dict))
-    
+
+    logger.info(f"Found {len(folders_with_permissions)} folders for user {current_user.user_id}")
     return folders_with_permissions
 
 @router.post("/", response_model=Folder, status_code=status.HTTP_201_CREATED)
@@ -60,6 +68,7 @@ async def create_folder(
     db: Session = Depends(get_db)
 ):
     """Create a new folder"""
+    logger.info(f"Creating folder '{folder_data.name}' for user {current_user.user_id}")
     permission_service = PermissionService(db)
     
     # If parent folder is specified, check write permission
@@ -72,6 +81,7 @@ async def create_folder(
             FolderModel.parent_id == folder_data.parent_id
         ).first()
         if existing:
+            logger.warning(f"Conflict: Folder with name '{folder_data.name}' already mapped to parent folder")
             raise ConflictException("Folder with this name already exists in the parent folder")
     else:
         # Check if root folder with same name exists for this user
@@ -81,6 +91,7 @@ async def create_folder(
             FolderModel.owner_id == current_user.user_id
         ).first()
         if existing:
+            logger.warning(f"Conflict: Root folder with name '{folder_data.name}' already exists for user {current_user.user_id}")
             raise ConflictException("Root folder with this name already exists")
     
     # Build folder path
@@ -96,7 +107,7 @@ async def create_folder(
     db.add(new_folder)
     db.commit()
     db.refresh(new_folder)
-    
+    logger.info(f"Folder created: {new_folder.name}")
     return new_folder
 
 @router.get("/{folder_id}", response_model=FolderWithPermissions)
@@ -106,11 +117,13 @@ async def get_folder(
     db: Session = Depends(get_db)
 ):
     """Get folder details"""
+    logger.info(f"Retrieving details for folder {folder_id}")
     permission_service = PermissionService(db)
     permission_service.check_folder_access(current_user.user_id, folder_id, "read")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
+        logger.error(f"Folder {folder_id} not found")
         raise NotFoundException("Folder not found")
     
     folder_dict = {
@@ -126,7 +139,8 @@ async def get_folder(
         "can_delete": permission_service.check_folder_permission(current_user.user_id, folder.id, "delete"),
         "is_admin": folder.owner_id == current_user.user_id or permission_service.check_folder_permission(current_user.user_id, folder.id, "admin")
     }
-    
+
+    logger.info(f"Folder details retrieved for folder {folder.name}")
     return FolderWithPermissions(**folder_dict)
 
 @router.put("/{folder_id}", response_model=Folder)
@@ -137,11 +151,13 @@ async def update_folder(
     db: Session = Depends(get_db)
 ):
     """Update folder"""
+    logger.info(f"Updating folder {folder_id} for user {current_user.user_id}")
     permission_service = PermissionService(db)
     permission_service.check_folder_access(current_user.user_id, folder_id, "write")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
+        logger.error(f"Folder {folder_id} not found for update")
         raise NotFoundException("Folder not found")
     
     if folder_update.name:
@@ -152,6 +168,7 @@ async def update_folder(
             FolderModel.id != folder_id
         ).first()
         if existing:
+            logger.warning(f"Conflict: Folder with name '{folder_update.name}' already exists in the parent folder")
             raise ConflictException("Folder with this name already exists in the parent folder")
         
         folder.name = folder_update.name
@@ -159,7 +176,8 @@ async def update_folder(
     
     db.commit()
     db.refresh(folder)
-    
+
+    logger.info(f"Folder updated: {folder.name}")
     return folder
 
 @router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -169,15 +187,18 @@ async def delete_folder(
     db: Session = Depends(get_db)
 ):
     """Delete folder and all its contents"""
+    logger.info(f"Deleting folder {folder_id} for user {current_user.user_id}")
     permission_service = PermissionService(db)
     permission_service.check_folder_access(current_user.user_id, folder_id, "delete")
     
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
+        logger.error(f"Folder {folder_id} not found for deletion")
         raise NotFoundException("Folder not found")
     
     db.delete(folder)
     db.commit()
+    logger.info(f"Folder {folder.name} deleted successfully")
 
 @router.post("/{folder_id}/permissions", response_model=PermissionInfo, status_code=status.HTTP_201_CREATED)
 async def grant_folder_permission(
@@ -187,6 +208,7 @@ async def grant_folder_permission(
     db: Session = Depends(get_db)
 ):
     """Grant permission to a user for a folder"""
+    logger.info(f"Granting permission for folder {folder_id} to user {permission_grant.user_id} by {current_user.user_id}")
     permission_service = PermissionService(db)
     
     permission = permission_service.grant_permission(
@@ -198,7 +220,14 @@ async def grant_folder_permission(
         can_delete=permission_grant.can_delete,
         is_admin=permission_grant.is_admin
     )
-    
+    logger.info(
+        f"Granting permission for folder {folder_id} to user {permission_grant.user_id} by {current_user.user_id} "
+        f"→ Granted: "
+        f"{'read ' if permission_grant.can_read else ''}"
+        f"{'write ' if permission_grant.can_write else ''}"
+        f"{'delete ' if permission_grant.can_delete else ''}"
+        f"{'admin ' if permission_grant.is_admin else ''}".strip()
+    )
     return permission
 
 @router.get("/{folder_id}/permissions", response_model=List[PermissionInfo])
@@ -208,17 +237,33 @@ async def list_folder_permissions(
     db: Session = Depends(get_db)
 ):
     """List all permissions for a folder"""
+    logger.info(f"Listing permissions for folder {folder_id} for user {current_user.user_id}")
     permission_service = PermissionService(db)
     
     # Check if user has admin access to the folder or is superuser
     folder = db.query(FolderModel).filter(FolderModel.id == folder_id).first()
     if not folder:
+        logger.error(f"Folder {folder_id} not found when listing permissions")
         raise NotFoundException("Folder not found")
 
     if not current_user.is_superuser and folder.owner_id != current_user.user_id and not permission_service.check_folder_permission(current_user.user_id, folder_id, "admin"):
+        logger.warning(f"Permission denied: User {current_user.user_id} cannot view permissions for folder {folder_id}")
         raise PermissionDeniedException("You don't have permission to view folder permissions")
     
     permissions = permission_service.get_folder_permissions(folder_id)
+    if permissions:
+        for p in permissions:
+            granted = ", ".join(perm for perm, val in {
+                "read": p.can_read,
+                "write": p.can_write,
+                "delete": p.can_delete,
+                "admin": p.is_admin,
+                }.items() if val
+            ) or "none"
+        logger.info(f"Folder {folder_id} → User {p.user_id} has permissions: {granted}")
+
+    else:
+        logger.info(f"No permissions found for folder {folder_id}")
     return permissions
 
 @router.delete("/{folder_id}/permissions/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -229,6 +274,7 @@ async def revoke_folder_permission(
     db: Session = Depends(get_db)
 ):
     """Revoke a user's permission for a folder"""
+    logger.info(f"Revoking permission for folder {folder_id} from user {user_id} by {current_user.user_id}")
     permission_service = PermissionService(db)
     
     success = permission_service.revoke_permission(
@@ -238,4 +284,6 @@ async def revoke_folder_permission(
     )
     
     if not success:
+        logger.warning(f"Permission not found when revoking for user {user_id} on folder {folder_id}")
         raise NotFoundException("Permission not found")
+    logger.info(f"Permission revoked for folder {folder_id} from user {user_id} by {current_user.user_id}")

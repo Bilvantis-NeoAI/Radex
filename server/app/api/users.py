@@ -2,6 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from app.database import get_db
 from app.schemas import User, UserCreate, UserUpdate
 from pydantic import BaseModel, EmailStr, Field
@@ -9,6 +10,8 @@ from app.models import User as UserModel
 from app.core.dependencies import get_current_superuser, get_current_active_user
 from app.services.auth_service import AuthService
 from app.core.exceptions import NotFoundException, BadRequestException
+from app.logger.logger import setup_logger
+logger = setup_logger()
 
 # Admin-specific schemas for CRUD operations
 class AdminUserCreate(BaseModel):
@@ -41,24 +44,31 @@ async def find_user(
     This endpoint is designed for sharing purposes - to find specific users to share 
     folders or grant permissions to. Only one of email or username should be provided.
     """
+    logger.info(f"User {current_user.user_id} is searching for a user with email: {email} or username: {username}")
     if not email and not username:
+        logger.warning(f"User {current_user.user_id} failed to provide email or username")
         raise BadRequestException("Either email or username must be provided")
     
     if email and username:
+        logger.warning(f"User {current_user.user_id} provided both email and username")
         raise BadRequestException("Provide either email or username, not both")
     
     auth_service = AuthService(db)
     
     if email:
+        logger.info(f"Searching user by email: {email}")
         user = auth_service.get_user_by_email(email)
     else:
+        logger.info(f"Searching user by username: {username}")
         user = auth_service.get_user_by_username(username)
     
     if not user:
+        logger.warning(f"User not found for email: {email} or username: {username}")
         raise NotFoundException("User not found")
     
     # Only return active users to regular users (privacy/security)
     if not user.is_active and not current_user.is_superuser:
+        logger.warning(f"Inactive user {user.user_id} requested by {current_user.user_id}")
         raise NotFoundException("User not found")
     
     user_dict = {
@@ -71,7 +81,7 @@ async def find_user(
         "created_at": user.created_at,
         "updated_at": user.updated_at
     }
-    
+    logger.info(f"User found: {user_dict}")
     return User(**user_dict)
 
 @router.get("/", response_model=List[User])
@@ -96,6 +106,7 @@ async def list_users(
     - limit: Maximum number of results (1-100, default 50)
     - offset: Number of results to skip (pagination)
     """
+    logger.info("Listing users based on filters")
     auth_service = AuthService(db)
     
     # Build query
@@ -103,12 +114,16 @@ async def list_users(
     
     # Apply filters
     if email:
+        logger.info(f"Filtering by email: {email}")
         query = query.filter(UserModel.email == email)
     if username:
+        logger.info(f"Filtering by username: {username}")
         query = query.filter(UserModel.username == username)
     if is_active is not None:
+        logger.info(f"Filtering by is_active: {is_active}")
         query = query.filter(UserModel.is_active == is_active)
     if is_superuser is not None:
+        logger.info(f"Filtering by is_superuser: {is_superuser}")
         query = query.filter(UserModel.is_superuser == is_superuser)
     
     # Apply pagination
@@ -129,6 +144,7 @@ async def list_users(
         }
         user_list.append(User(**user_dict))
     
+    logger.info(f"Found {len(user_list)} users matching criteria")
     return user_list
 
 @router.get("/search", response_model=List[User])
@@ -144,7 +160,7 @@ async def search_users(
     The search term will be matched against both email and username fields using LIKE.
     """
     # Search in both email and username fields
-    from sqlalchemy import or_
+
     users = db.query(UserModel).filter(
         or_(
             UserModel.email.ilike(f"%{q}%"),
@@ -166,7 +182,7 @@ async def search_users(
             "updated_at": user.updated_at
         }
         user_list.append(User(**user_dict))
-    
+    logger.info(f"Search for '{q}' returned {len(user_list)} users")
     return user_list
 
 @router.get("/{user_id}", response_model=User)
@@ -176,10 +192,12 @@ async def get_user_by_id(
     db: Session = Depends(get_db)
 ):
     """Get a specific user by ID. Only accessible to superusers."""
+    logger.info(f"Fetching user by ID: {user_id}")
     auth_service = AuthService(db)
     
     user = auth_service.get_user_by_id(str(user_id))
     if not user:
+        logger.warning(f"User not found with ID: {user_id}")
         raise NotFoundException("User not found")
     
     user_dict = {
@@ -192,7 +210,7 @@ async def get_user_by_id(
         "created_at": user.created_at,
         "updated_at": user.updated_at
     }
-    
+    logger.info(f"User found: {user_dict}")
     return User(**user_dict)
 
 # CRUD Operations (Superuser only)
@@ -203,6 +221,7 @@ async def create_user(
     db: Session = Depends(get_db)
 ):
     """Create a new user. Only accessible to superusers."""
+    logger.info(f"Creating new user with email: {user_data.email} and username: {user_data.username}")
     auth_service = AuthService(db)
     
     # Create user with admin privileges (can set superuser status)
@@ -217,7 +236,7 @@ async def create_user(
         "created_at": new_user.created_at,
         "updated_at": new_user.updated_at
     }
-    
+    logger.info(f"User created: {user_dict}")
     return User(**user_dict)
 
 @router.put("/{user_id}", response_model=User)
@@ -228,11 +247,13 @@ async def update_user(
     db: Session = Depends(get_db)
 ):
     """Update a user. Only accessible to superusers."""
+    logger.info(f"Updating user {user_id} with data: {user_update}")
     auth_service = AuthService(db)
     
     # Check if user exists
     user = auth_service.get_user_by_id(str(user_id))
     if not user:
+        logger.warning(f"User not found with ID: {user_id}")
         raise NotFoundException("User not found")
     
     # Update user
@@ -247,7 +268,7 @@ async def update_user(
         "created_at": updated_user.created_at,
         "updated_at": updated_user.updated_at
     }
-    
+    logger.info(f"User updated: {user_dict}")
     return User(**user_dict)
 
 @router.delete("/{user_id}", status_code=204)
@@ -257,20 +278,25 @@ async def delete_user(
     db: Session = Depends(get_db)
 ):
     """Delete a user. Only accessible to superusers."""
+    logger.info(f"Deleting user with ID: {user_id}")
     auth_service = AuthService(db)
     
     # Check if user exists
     user = auth_service.get_user_by_id(str(user_id))
     if not user:
+        logger.warning(f"User not found with ID: {user_id}")
         raise NotFoundException("User not found")
     
     # Prevent self-deletion
     if str(user_id) == str(current_user.user_id):
+        logger.warning(f"Superuser {current_user.user_id} attempted to delete their own account")
         raise BadRequestException("Cannot delete your own account")
     
     # Delete user
     success = auth_service.delete_user(str(user_id))
     if not success:
+        logger.error(f"User {user_id} not found")
         raise NotFoundException("User not found")
     
+    logger.info(f"User {user_id} deleted successfully")    
     return None

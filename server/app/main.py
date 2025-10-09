@@ -14,12 +14,14 @@ from app.core.exceptions import (
     BadRequestException,
     ConflictException
 )
+from app.logger.logger import setup_logger
+logger = setup_logger()
 
 # Create database tables
 try:
     Base.metadata.create_all(bind=engine)
 except Exception as e:
-    print(f"Warning: Could not create database tables: {e}")
+    logger.warning(f"Could not create database tables: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -104,19 +106,19 @@ def health_check():
 # Optional: Add startup event to validate configuration
 @app.on_event("startup")
 async def startup_event():
-    print(f"Starting {settings.app_name}")
-    print(f"Debug mode: {settings.debug}")
-    
+    logger.info(f"Starting {settings.app_name}")
+    logger.info(f"Debug mode: {settings.debug}")
+
     # Validate critical settings
     if not settings.jwt_secret_key or settings.jwt_secret_key == "your-secret-key-change-this":
-        print("WARNING: JWT secret key is not properly configured!")
+        logger.warning("WARNING: JWT secret key is not properly configured!")
     
     if not settings.openai_api_key or settings.openai_api_key == "your-openai-api-key":
-        print("WARNING: OpenAI API key is not properly configured!")
+        logger.warning("WARNING: OpenAI API key is not properly configured!")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    print(f"Shutting down {settings.app_name}")
+    logger.info(f"Shutting down {settings.app_name}")
 
 if __name__ == "__main__":
     uvicorn.run(

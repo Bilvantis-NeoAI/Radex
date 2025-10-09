@@ -54,7 +54,8 @@ class APIClient {
 		if (typeof window !== 'undefined') {
 			if (token) localStorage.setItem('auth_token', token);
 			else localStorage.removeItem('auth_token');
-			console.log('Token set in localStorage:', token);
+			console.log("Token set in LocalStorage");
+			// console.log('Token set in LocalStorage:', token);
 		}
 		// When logging out, cancel any in-flight requests
 		if (!token && this.abortController) {

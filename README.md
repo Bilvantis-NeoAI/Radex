@@ -61,6 +61,30 @@ RADEX/
 - Axios for API communication
 - **Firebase Client SDK**: For client-side authentication and real-time features.
 
+## 🔒 Authentication Details
+
+### 1. Okta Authentication (Enterprise Mode)
+
+When Okta is enabled via environment variables (`OKTA_CLIENT_ID`, `OKTA_DOMAIN`, etc.):
+
+- Users are redirected to Okta’s hosted login page.
+- Upon successful login, Okta issues an ID token and access token.
+- The backend (FastAPI) verifies the Okta token’s signature and extracts user claims.
+- If the user does not exist locally, RADEX creates a user record and assigns a default role (e.g., Viewer).
+- The FastAPI backend then issues a RADEX JWT for session management in the frontend.
+- RBAC is enforced using roles stored in the RADEX database (Owner, Editor, Viewer).
+
+**Key Benefit**: Centralized enterprise authentication with SCIM / SSO support.
+
+### 2. Firebase Authentication (Cloud Mode)
+
+When Firebase is enabled (`FIREBASE_ADMIN_SDK_JSON` and client SDK variables):
+
+- The frontend uses Firebase Client SDK for authentication (email/password, Google, etc.).
+- The Firebase ID token is sent to the backend via `Authorization: Bearer <token>`.
+- The backend uses Firebase Admin SDK to verify and decode the token.
+- Upon verification, the user is mapped to a RADEX user record.
+
 ## 📋 Prerequisites
 
 - Docker and Docker Compose
@@ -203,6 +227,7 @@ python create_admin_user.py
 - Text Files (`.txt`)
 - Markdown (`.md`)
 - HTML (`.html`, `.htm`)
+- CSV (`.csv`)
 
 ## 🧪 Testing
 
@@ -299,6 +324,9 @@ curl -X POST "http://localhost:8000/api/v1/auth/login" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=testuser&password=secure123"
 
+# Okta login
+**Note:** This is typically done via browser redirect, not direct curl.
+
 # Create folder (with auth token)
 curl -X POST "http://localhost:8000/api/v1/folders" \
   -H "Authorization: Bearer YOUR_TOKEN" \
@@ -338,7 +366,7 @@ radex/
 │   ├── src/
 │   │   ├── app/          # Next.js app router
 │   │   ├── components/   # React components
-│   │   ├── hooks/        # Custom hooks
+│   │   ├── contexts/     # React Context Providers for global state (auth, theme, etc.)
 │   │   ├── lib/          # Utilities
 │   │   └── types/        # TypeScript types
 │   └── package.json
@@ -382,23 +410,23 @@ npm run format
 **Database Connection Failed**
 ```bash
 # Check PostgreSQL status
-docker-compose ps postgres
+docker-compose ps postgres_db_radex
 
 # View logs
-docker-compose logs postgres
+docker-compose logs postgres_db_radex
 
 # Restart database
-docker-compose restart postgres
+docker-compose restart postgres_db_radex
 ```
 
 **MinIO Connection Error**
 ```bash
 # Check MinIO status
-docker-compose logs minio
+docker-compose logs minio_radex
 
 # Verify bucket creation
-docker exec -it radex-minio-1 mc alias set minio http://localhost:9000 minioadmin minioadmin
-docker exec -it radex-minio-1 mc mb minio/documents
+docker exec -it minio_radex mc alias set minio http://localhost:9000 minioadmin minioadmin
+docker exec -it minio_radex mc mb minio/documents
 ```
 
 **OpenAI API Error**

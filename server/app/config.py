@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     OKTA_DOMAIN: Optional[str] = None
     OKTA_REDIRECT_URI: Optional[str] = None
     OKTA_API_TOKEN: Optional[str] = None
-
+    OKTA_API_AUDIENCE: Optional[str] = None
+    
     # Database
     database_url: str
     

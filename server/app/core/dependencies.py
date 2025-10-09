@@ -5,22 +5,26 @@ from sqlalchemy.orm import Session
 from jose import JWTError
 from app.database import get_db
 from app.core.security import decode_access_token
+from app.logger.logger import setup_logger
 from app.models import User
 from app.schemas import TokenData
 from firebase_admin import auth
+logger = setup_logger()
 
 oauth2_scheme_standard = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 oauth2_scheme_okta = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/okta_login")
-
 
 async def get_current_okta_user(
     token: str,
     db: Session = Depends(get_db)
 ) -> User:
-
-    print("Received token:", token)
-    decoded_token = auth.verify_id_token(token)
-    print("Decoded token:", decoded_token)
+    # Oauth token expiry is automatically validated by auth.verify_id_token
+    try:
+        decoded_token = auth.verify_id_token(token)
+        logger.info(f"Decoded Okta token: {decoded_token}")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid or expired token: {str(e)}")
+    
     email = decoded_token.get("email")
     if not email:
         raise HTTPException(status_code=401, detail="Invalid token: missing email")
@@ -29,7 +33,6 @@ async def get_current_okta_user(
     okta_user = db.query(User).filter_by(email=email).first()
     if not okta_user:
         raise HTTPException(status_code=404, detail="User not found")
-
     return okta_user
 
 async def get_current_user_standard(
@@ -72,7 +75,7 @@ async def get_current_user(request: Request,
 
     # Determine which OAuth2 scheme to use based on login_type_ctx
     login_type = request.headers.get("X-Login-Type", "radex")   
-    # print(login_type)
+    # logger.info(f"Login type: {login_type}")
     if login_type.lower() == "okta":
         user = await get_current_okta_user(token=token,db=db)
     else:

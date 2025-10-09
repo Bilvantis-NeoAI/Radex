@@ -16,6 +16,8 @@ from app.utils import (
     extract_text_from_file,
     validate_file_size
 )
+from app.logger.logger import setup_logger
+logger = setup_logger()
 
 class DocumentService:
     def __init__(self, db: Session):
@@ -30,11 +32,15 @@ class DocumentService:
     
     def _ensure_bucket_exists(self):
         """Ensure the MinIO bucket exists"""
+        logger.info(f"Ensuring MinIO bucket exists: {settings.minio_bucket}")
         try:
             if not self.minio_client.bucket_exists(settings.minio_bucket):
                 self.minio_client.make_bucket(settings.minio_bucket)
+                logger.info(f"Created MinIO bucket: {settings.minio_bucket}")
+            else:
+                logger.info(f"MinIO bucket already exists: {settings.minio_bucket}")
         except S3Error as e:
-            print(f"Error creating bucket: {e}")
+            logger.error(f"Error creating bucket: {e}")
     
     def _generate_file_hash(self, file_content: bytes) -> str:
         """Generate SHA-256 hash of file content"""
@@ -51,9 +57,11 @@ class DocumentService:
         uploaded_by: UUID
     ) -> Document:
         """Upload a document to MinIO and save metadata to database"""
+        logger.info(f"Uploading document: {file.filename} to folder: {folder_id} by user: {uploaded_by}")
         # Validate folder exists
         folder = self.db.query(Folder).filter(Folder.id == folder_id).first()
         if not folder:
+            logger.warning(f"Folder {folder_id} not found")
             raise NotFoundException("Folder not found")
         
         # Read file content
@@ -62,11 +70,13 @@ class DocumentService:
         
         # Validate file size
         if not validate_file_size(file_size):
+            logger.warning(f"File size exceeds maximum limit (50MB) for file: {file.filename}")
             raise BadRequestException("File size exceeds maximum limit (50MB)")
         
         # Get file type
         file_type = get_file_type(file.filename)
         if not file_type:
+            logger.warning(f"Could not determine file type for file: {file.filename}")
             raise BadRequestException("Could not determine file type")
         
         # Generate file hash for deduplication
@@ -79,6 +89,7 @@ class DocumentService:
         ).first()
         
         if existing_doc:
+            logger.warning(f"File with name {file.filename} already exists in folder {folder_id}")
             raise BadRequestException("File with this name already exists in the folder")
         
         # Create document record
@@ -99,6 +110,7 @@ class DocumentService:
         object_name = self._get_object_name(str(document.id), file.filename)
         
         try:
+            logger.info(f"Creating a temporary file and uploading to MinIO: {object_name}")
             # Create a temporary file for upload
             with tempfile.NamedTemporaryFile() as temp_file:
                 temp_file.write(file_content)
@@ -116,24 +128,32 @@ class DocumentService:
             self.db.commit()
             self.db.refresh(document)
             
+            logger.info(f"Document uploaded successfully with ID: {document.id}")
             return document
             
         except S3Error as e:
             self.db.rollback()
+            logger.error(f"Error uploading file to MinIO: {e}")
             raise BadRequestException(f"Failed to upload file: {str(e)}")
     
     def get_document(self, document_id: UUID) -> Optional[Document]:
         """Get document by ID"""
+        logger.info(f"Fetching document with ID: {document_id}")
         return self.db.query(Document).filter(Document.id == document_id).first()
     
     def get_documents_in_folder(self, folder_id: UUID) -> List[Document]:
         """Get all documents in a folder"""
-        return self.db.query(Document).filter(Document.folder_id == folder_id).all()
-    
+        logger.info(f"Fetching documents in folder with ID: {folder_id}")
+        documents = self.db.query(Document).filter(Document.folder_id == folder_id).all()
+        logger.info(f"Found {len(documents)} documents in folder with ID: {folder_id}")
+        return documents
+
     def download_document(self, document_id: UUID) -> tuple[BinaryIO, str, str]:
         """Download document from MinIO"""
+        logger.info(f"Initiating download for document ID: {document_id}")
         document = self.get_document(document_id)
         if not document:
+            logger.warning(f"Document {document_id} not found")
             raise NotFoundException("Document not found")
         
         try:
@@ -141,15 +161,19 @@ class DocumentService:
                 settings.minio_bucket,
                 document.file_path
             )
+            logger.info(f"Document downloaded successfully with ID: {document.id}")
             return response, document.filename, document.file_type
             
         except S3Error as e:
+            logger.error(f"Error downloading file from MinIO: {e}")
             raise BadRequestException(f"Failed to download file: {str(e)}")
     
     def delete_document(self, document_id: UUID) -> bool:
         """Delete document from both database and MinIO"""
+        logger.info(f"Deleting document with ID: {document_id}")
         document = self.get_document(document_id)
         if not document:
+            logger.warning(f"Document {document_id} not found")
             raise NotFoundException("Document not found")
         
         try:
@@ -162,24 +186,30 @@ class DocumentService:
             # Delete from database (this will cascade to embeddings)
             self.db.delete(document)
             self.db.commit()
-            
+
+            logger.info(f"Document deleted successfully with ID: {document.id}")
             return True
             
         except S3Error as e:
             self.db.rollback()
+            logger.error(f"Error deleting file from MinIO: {e}")
             raise BadRequestException(f"Failed to delete file: {str(e)}")
     
     def extract_document_text(self, document_id: UUID) -> str:
         """Extract text content from document"""
+        logger.info(f"Extracting text from document with ID: {document_id}")
         document = self.get_document(document_id)
         if not document:
+            logger.warning(f"Document {document_id} not found")
             raise NotFoundException("Document not found")
         
         if not is_supported_file_type(document.file_type):
+            logger.warning(f"Unsupported file type for text extraction: {document.file_type}")
             raise BadRequestException(f"File type '{document.file_type}' is not supported for text extraction")
         
         try:
             # Download file to temporary location
+            logger.info(f"Downloading document {document_id} for text extraction")
             with tempfile.NamedTemporaryFile(suffix=f".{document.file_type}") as temp_file:
                 response = self.minio_client.get_object(
                     settings.minio_bucket,
@@ -193,11 +223,14 @@ class DocumentService:
                 
                 # Extract text
                 text = extract_text_from_file(temp_file.name, document.file_type)
+                logger.info(f"Text extraction successful for document ID: {document.id}")
                 return text
                 
         except S3Error as e:
+            logger.error(f"Failed to download file for text extraction: {str(e)}")
             raise BadRequestException(f"Failed to download file for text extraction: {str(e)}")
         except Exception as e:
+            logger.error(f"Failed to extract text from document: {str(e)}")
             raise BadRequestException(f"Failed to extract text: {str(e)}")
     
     def update_document_metadata(
@@ -206,8 +239,10 @@ class DocumentService:
         metadata: dict
     ) -> Document:
         """Update document metadata"""
+        logger.info(f"Updating metadata for document with ID: {document_id}")
         document = self.get_document(document_id)
         if not document:
+            logger.warning(f"Document {document_id} not found")
             raise NotFoundException("Document not found")
         
         # Merge with existing metadata
@@ -217,5 +252,5 @@ class DocumentService:
         
         self.db.commit()
         self.db.refresh(document)
-        
+        logger.info(f"Document metadata updated successfully for document ID: {document.id}")
         return document
