@@ -24,12 +24,19 @@ export default function LoginForm() {
     e.preventDefault();
     setIsLoading(true);
     setError('');
-
+ 
     try {
       await login(username, password);
       router.push('/dashboard');
-    } catch (error: unknown) {
-      const message = error && typeof error === 'object' && 'response' in error ? 'Login failed' : 'Login failed';
+    } catch (error: any) {
+      let message = 'Login failed';
+      if (error?.response?.data?.detail) {
+        message = error.response.data.detail;
+      } else if (typeof error === 'string') {
+        message = error;
+      }
+      // Remove leading error code if present (e.g., "429: Too many failed login attempts...")
+      message = message.replace(/^\d+\s*:\s*/, '');
       setError(message);
     } finally {
       setIsLoading(false);

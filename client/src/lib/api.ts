@@ -6,7 +6,7 @@ import type { RAGQuery, RAGResponse } from '@/types/rag';
 import type { ChatSessionResponse, ChatSessionWithMessages, ChatMessageResponse, ChatMessageCreate } from '@/types/chat';
 import { validate as isUUID } from 'uuid';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 const API_PREFIX = '/api/v1';
 
 class APIClient {

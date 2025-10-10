@@ -14,7 +14,11 @@ from app.core.exceptions import (
     BadRequestException,
     ConflictException
 )
+from dotenv import load_dotenv
+import os
 from app.logger.logger import setup_logger
+load_dotenv()
+
 logger = setup_logger()
 
 # Create database tables
@@ -22,6 +26,10 @@ try:
     Base.metadata.create_all(bind=engine)
 except Exception as e:
     logger.warning(f"Could not create database tables: {e}")
+
+frontend_url = os.getenv("FRONTEND_URL")
+if not frontend_url:
+    raise RuntimeError("FRONTEND_URL environment variable is required for CORS")
 
 # Create FastAPI app
 app = FastAPI(
@@ -35,9 +43,9 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=[frontend_url],  # In production, replace with specific origins
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT", "OPTIONS"],
     allow_headers=["*"],
 )
 

@@ -1,5 +1,5 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -8,9 +8,15 @@ from app.services.auth_service import AuthService
 from app.core.security import create_access_token
 from app.core.dependencies import get_current_active_user
 from app.config import settings
+from app.redis import get_redis_client
 from app.firebase import initialize_firebase
 from app.logger.logger import setup_logger
 from datetime import datetime
+from dotenv import load_dotenv
+import os
+load_dotenv()
+MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS"))
+LOCKOUT_TIME = int(os.getenv("LOCKOUT_TIME"))  # in seconds
 logger = setup_logger()
 
 router = APIRouter()
@@ -90,16 +96,37 @@ def okta_login(
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     logger.info("Processing standard login request")
     """Login and receive access token"""
     try:
+        username = form_data.username
+        redis_client = get_redis_client()
+        lockout_key = f"login:lockout:{username}"
+        attempts_key = f"login:attempts:{username}"
+    
+        # Check if user is locked out
+        if redis_client.exists(lockout_key):
+            logger.warning(f"User {username} is locked out.")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again after 5 minutes."
+            )
+        
         auth_service = AuthService(db)
         user = auth_service.authenticate_user(form_data.username, form_data.password)
         
         if not user:
-            logger.warning(f"Incorrect username or password for standardlogin attempt for user: {form_data.username}")
+            attempts = redis_client.incr(attempts_key)
+            if attempts == 1:
+                redis_client.expire(attempts_key, LOCKOUT_TIME)
+            if int(attempts) >= MAX_ATTEMPTS:
+                redis_client.set(lockout_key, "locked", ex=LOCKOUT_TIME)
+                redis_client.delete(attempts_key)
+                logger.warning(f"User {username} locked out due to too many failed attempts.")
+            logger.warning(f"Incorrect username or password for standard login attempt for user: {username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
@@ -107,11 +134,15 @@ def login(
             )
         
         if not user.is_active:
-            logger.warning(f"Inactive user login for standard login attempt: {form_data.username}")
+            logger.warning(f"Inactive user login for standard login attempt: {username}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user"
             )
+        
+        # Reset failed attempts on successful login
+        redis_client.delete(attempts_key)
+        redis_client.delete(lockout_key)
         
         access_token_expires = timedelta(minutes=settings.jwt_expiration_minutes)
         access_token = create_access_token(
