@@ -58,17 +58,6 @@ jobs:
         APP_NAME: RAG RBAC Test
         DEBUG: true
 
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4
-      if: matrix.python-version == '3.11'
-      with:
-        file: ./server/coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
     - name: Test Summary
       if: always()
       run: |
