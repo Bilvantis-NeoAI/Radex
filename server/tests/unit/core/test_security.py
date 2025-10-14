@@ -147,7 +147,7 @@ class TestJWTTokens:
 
         # Verify expiration is approximately 30 minutes from now
         exp_timestamp = decoded["exp"]
-        exp_datetime = datetime.fromtimestamp(exp_timestamp)
+        exp_datetime = datetime.utcfromtimestamp(exp_timestamp)
         expected_exp = datetime.utcnow() + timedelta(minutes=30)
 
         # Allow 1 minute tolerance
@@ -163,7 +163,7 @@ class TestJWTTokens:
         assert decoded is not None
 
         exp_timestamp = decoded["exp"]
-        exp_datetime = datetime.fromtimestamp(exp_timestamp)
+        exp_datetime = datetime.utcfromtimestamp(exp_timestamp)
         expected_exp = datetime.utcnow() + timedelta(minutes=settings.jwt_expiration_minutes)
 
         # Allow 1 minute tolerance

@@ -152,17 +152,29 @@ class TestGetUserAccessibleFolders:
         sample_user.is_superuser = False
         sample_folder.owner_id = sample_user.id
 
-        mock_db.query().filter().first.return_value = sample_user
-        mock_db.query().filter().all.return_value = [sample_folder]
-        mock_db.query().filter().all.return_value = []  # No permissions
+        # Setup mock chain for multiple queries
+        user_query = Mock()
+        user_query.first.return_value = sample_user
 
-        # Mock second query for permissions
-        mock_perm_query = Mock()
-        mock_perm_query.all.return_value = []
-        mock_db.query().filter.return_value = mock_perm_query
+        owned_folders_query = Mock()
+        owned_folders_query.all.return_value = [sample_folder]
+
+        permissions_query = Mock()
+        permissions_query.all.return_value = []
+
+        permitted_folders_query = Mock()
+        permitted_folders_query.all.return_value = []
+
+        # Chain the mock returns
+        mock_db.query.return_value.filter.side_effect = [
+            user_query,  # First query for user
+            owned_folders_query,  # Query for owned folders
+            permissions_query,  # Query for permissions
+        ]
 
         result = service.get_user_accessible_folders(sample_user.id)
 
+        assert isinstance(result, list)
         assert len(result) >= 1
 
     def test_user_gets_permitted_folders(self, mock_db, sample_user, sample_folder, sample_permission):
@@ -171,14 +183,32 @@ class TestGetUserAccessibleFolders:
 
         sample_user.is_superuser = False
         sample_permission.can_read = True
+        sample_permission.folder_id = sample_folder.id
 
-        # Setup complex mock chain
-        mock_db.query().filter().first.return_value = sample_user
+        # Setup mock chain
+        user_query = Mock()
+        user_query.first.return_value = sample_user
 
-        # Mock owned folders query
-        owned_query = Mock()
-        owned_query.all.return_value = []
-        mock_db.query().filter.return_value = owned_query
+        owned_folders_query = Mock()
+        owned_folders_query.all.return_value = []
+
+        permissions_query = Mock()
+        permissions_query.all.return_value = [sample_permission]
+
+        permitted_folders_query = Mock()
+        permitted_folders_query.all.return_value = [sample_folder]
+
+        # Mock query chain - need to handle multiple query calls
+        mock_query = Mock()
+        mock_filter = Mock()
+
+        mock_db.query.return_value = mock_query
+        mock_query.filter.side_effect = [
+            user_query,
+            owned_folders_query,
+            permissions_query,
+            permitted_folders_query
+        ]
 
         result = service.get_user_accessible_folders(sample_user.id)
 
@@ -189,13 +219,28 @@ class TestGetUserAccessibleFolders:
         service = PermissionService(mock_db)
 
         sample_user.is_superuser = False
+        sample_folder.owner_id = sample_user.id
 
-        # User owns the folder AND has permission to it
-        mock_db.query().filter().first.return_value = sample_user
+        # Setup mock to return same folder in both owned and permitted
+        user_query = Mock()
+        user_query.first.return_value = sample_user
+
+        owned_folders_query = Mock()
+        owned_folders_query.all.return_value = [sample_folder]
+
+        permissions_query = Mock()
+        permissions_query.all.return_value = []
+
+        mock_db.query.return_value.filter.side_effect = [
+            user_query,
+            owned_folders_query,
+            permissions_query,
+        ]
 
         result = service.get_user_accessible_folders(sample_user.id)
 
         # Should not contain duplicates
+        assert isinstance(result, list)
         folder_ids = [f.id for f in result]
         assert len(folder_ids) == len(set(folder_ids))
 
@@ -207,13 +252,19 @@ class TestGrantPermission:
         """Test superuser can grant permissions"""
         service = PermissionService(mock_db)
 
-        mock_db.query().filter().first.side_effect = [
-            sample_admin_user,  # granter
-            sample_folder,
-            None  # no existing permission
+        # Setup query mocks for granter check and existing permission check
+        granter_query = Mock()
+        granter_query.first.return_value = sample_admin_user
+
+        permission_query = Mock()
+        permission_query.first.return_value = None  # No existing permission
+
+        mock_db.query.return_value.filter.side_effect = [
+            granter_query,
+            permission_query
         ]
 
-        # Mock Permission creation
+        # Mock database operations
         mock_db.add = Mock()
         mock_db.commit = Mock()
         mock_db.refresh = Mock()
@@ -235,10 +286,39 @@ class TestGrantPermission:
         sample_user.is_superuser = False
         sample_folder.owner_id = sample_user.id
 
-        mock_db.query().filter().first.side_effect = [
-            sample_user,  # granter (not superuser)
-            sample_folder,  # folder owned by granter
-            None  # no existing permission
+        # Setup mock chain for all queries:
+        # 1. Query for granter (check if superuser)
+        # 2. Query for user in check_folder_permission
+        # 3. Query for folder in check_folder_permission
+        # 4. Query for permission in check_folder_permission (returns None, checks parent)
+        # 5. Query for folder to check owner
+        # 6. Query for existing permission to update/create
+
+        granter_query = Mock()
+        granter_query.first.return_value = sample_user
+
+        check_perm_user_query = Mock()
+        check_perm_user_query.first.return_value = sample_user
+
+        check_perm_folder_query = Mock()
+        check_perm_folder_query.first.return_value = sample_folder
+
+        check_perm_permission_query = Mock()
+        check_perm_permission_query.first.return_value = None
+
+        folder_owner_query = Mock()
+        folder_owner_query.first.return_value = sample_folder
+
+        existing_permission_query = Mock()
+        existing_permission_query.first.return_value = None
+
+        mock_db.query.return_value.filter.side_effect = [
+            granter_query,
+            check_perm_user_query,
+            check_perm_folder_query,
+            check_perm_permission_query,
+            folder_owner_query,
+            existing_permission_query
         ]
 
         mock_db.add = Mock()
@@ -260,10 +340,36 @@ class TestGrantPermission:
 
         sample_user.is_superuser = False
         sample_folder.owner_id = uuid4()  # Different owner
+        sample_folder.parent_id = None  # No parent to check
 
-        mock_db.query().filter().first.side_effect = [
-            sample_user,
-            sample_folder
+        # Setup mock chain for all queries:
+        # 1. Query for granter (check if superuser)
+        # 2. Query for user in check_folder_permission
+        # 3. Query for folder in check_folder_permission
+        # 4. Query for permission in check_folder_permission
+        # 5. Query for folder to check owner
+
+        granter_query = Mock()
+        granter_query.first.return_value = sample_user
+
+        check_perm_user_query = Mock()
+        check_perm_user_query.first.return_value = sample_user
+
+        check_perm_folder_query = Mock()
+        check_perm_folder_query.first.return_value = sample_folder
+
+        check_perm_permission_query = Mock()
+        check_perm_permission_query.first.return_value = None
+
+        folder_owner_query = Mock()
+        folder_owner_query.first.return_value = sample_folder
+
+        mock_db.query.return_value.filter.side_effect = [
+            granter_query,
+            check_perm_user_query,
+            check_perm_folder_query,
+            check_perm_permission_query,
+            folder_owner_query
         ]
 
         with pytest.raises(PermissionDeniedException):
@@ -278,14 +384,26 @@ class TestGrantPermission:
         """Test updating existing permission"""
         service = PermissionService(mock_db)
 
+        # Ensure admin user is a superuser
+        sample_admin_user.is_superuser = True
+
         existing_permission = sample_permission
         existing_permission.can_read = False
         existing_permission.can_write = False
 
-        mock_db.query().filter().first.side_effect = [
-            sample_admin_user,
-            sample_folder,
-            existing_permission
+        # Setup mock chain for superuser case:
+        # 1. Query for granter (is superuser, so skips permission checks)
+        # 2. Query for existing permission to update
+
+        granter_query = Mock()
+        granter_query.first.return_value = sample_admin_user
+
+        permission_query = Mock()
+        permission_query.first.return_value = existing_permission
+
+        mock_db.query.return_value.filter.side_effect = [
+            granter_query,
+            permission_query
         ]
 
         mock_db.commit = Mock()
