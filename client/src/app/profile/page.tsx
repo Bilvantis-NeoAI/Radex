@@ -11,6 +11,9 @@ export default function ProfilePage() {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  // Feature flags (inject at build time via NEXT_PUBLIC_*)
+  const enableProfileEdit = process.env.NEXT_PUBLIC_ENABLE_PROFILE_EDIT === 'true';
+  const enablePasswordChange = process.env.NEXT_PUBLIC_ENABLE_PASSWORD_CHANGE === 'true';
   const [formData, setFormData] = useState({
     username: user?.username || '',
     email: user?.email || '',
@@ -91,10 +94,9 @@ export default function ProfilePage() {
             </div>
           </div>
           
-          {!isEditing && (
+          {!isEditing && enableProfileEdit && (
             <Button
               variant="secondary"
-              disabled
               onClick={() => setIsEditing(true)}
             >
               <Settings className="w-4 h-4 mr-2" />
@@ -141,7 +143,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {isEditing && (
+          {isEditing && enableProfileEdit && (
             <div className="flex space-x-4 mt-6">
               <Button type="submit">
                 <Save className="w-4 h-4 mr-2" />
@@ -178,10 +180,9 @@ export default function ProfilePage() {
             </div>
           </div>
           
-          {!showPasswordForm && (
+          {!showPasswordForm && enablePasswordChange && (
             <Button
               variant="secondary"
-              disabled
               onClick={() => setShowPasswordForm(true)}
             >
               Change Password
@@ -189,7 +190,7 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {showPasswordForm && (
+        {showPasswordForm && enablePasswordChange && (
           <form onSubmit={handleChangePassword}>
             <div className="space-y-4">
               <div>
@@ -245,6 +246,10 @@ export default function ProfilePage() {
               </Button>
             </div>
           </form>
+        )}
+        {/* Optionally show a note when password change is disabled */}
+        {showPasswordForm && !enablePasswordChange && (
+          <div className="text-sm text-gray-600">Password change is currently disabled.</div>
         )}
       </div>
 
