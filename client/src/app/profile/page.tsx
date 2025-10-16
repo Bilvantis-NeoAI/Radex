@@ -94,6 +94,7 @@ export default function ProfilePage() {
           {!isEditing && (
             <Button
               variant="secondary"
+              disabled
               onClick={() => setIsEditing(true)}
             >
               <Settings className="w-4 h-4 mr-2" />
@@ -180,6 +181,7 @@ export default function ProfilePage() {
           {!showPasswordForm && (
             <Button
               variant="secondary"
+              disabled
               onClick={() => setShowPasswordForm(true)}
             >
               Change Password
