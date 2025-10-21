@@ -13,6 +13,10 @@ export default function LoginForm() {
   const { loginWithGoogle, loginWithMicrosoft, loginWithOkta, isAuthenticated, user } = useAuth();
   const router = useRouter();
 
+  // Feature flag: set NEXT_PUBLIC_ENABLE_MICROSOFT_AUTH=true to enable Microsoft login
+  const isMicrosoftEnabled =
+    typeof process !== 'undefined' && process.env.NEXT_PUBLIC_ENABLE_MICROSOFT_AUTH === 'true';
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -124,26 +128,28 @@ export default function LoginForm() {
           </Button>
 
           {/* Microsoft Sign In */}
-          <Button
-            onClick={handleMicrosoftLogin}
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all"
-          >
-            {provider === 'microsoft' ? (
-              <span className="animate-spin h-5 w-5 border-2 border-gray-600 border-t-transparent rounded-full" />
-            ) : (
-              <svg className="h-5 w-5" viewBox="0 0 23 23">
-                <path fill="#f3f3f3" d="M0 0h23v23H0z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-            )}
-            <span className="font-medium">
-              {provider === 'microsoft' ? 'Signing in...' : 'Continue with Microsoft'}
-            </span>
-          </Button>
+          {isMicrosoftEnabled && (
+            <Button
+              onClick={handleMicrosoftLogin}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-3 bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all"
+            >
+              {provider === 'microsoft' ? (
+                <span className="animate-spin h-5 w-5 border-2 border-gray-600 border-t-transparent rounded-full" />
+              ) : (
+                <svg className="h-5 w-5" viewBox="0 0 23 23">
+                  <path fill="#f3f3f3" d="M0 0h23v23H0z" />
+                  <path fill="#f35325" d="M1 1h10v10H1z" />
+                  <path fill="#81bc06" d="M12 1h10v10H12z" />
+                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                  <path fill="#ffba08ff" d="M12 12h10v10H12z" />
+                </svg>
+              )}
+              <span className="font-medium">
+                {provider === 'microsoft' ? 'Signing in...' : 'Continue with Microsoft'}
+              </span>
+            </Button>
+          )}
 
           {/* Okta Sign In */}
           <Button
