@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -12,7 +13,11 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
   const { isAuthenticated, isLoading } = useAuth();
+  
+  // Hide sidebar on profile and settings pages
+  const hideSidebar = pathname?.includes('/profile') || pathname?.includes('/settings');
 
   if (isLoading) {
     return (
@@ -34,21 +39,27 @@ export default function Layout({ children }: LayoutProps) {
       <Header />
       
       <div className="flex h-[calc(100vh-4rem)]">
-        <Sidebar 
-          isOpen={sidebarOpen} 
-          onClose={() => setSidebarOpen(false)} 
-        />
+        {!hideSidebar && (
+          <Sidebar 
+            isOpen={sidebarOpen} 
+            onClose={() => setSidebarOpen(false)} 
+          />
+        )}
         
-        <main className="flex-1 overflow-auto">
-          {/* Mobile menu button */}
-          <div className="md:hidden p-4">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-          </div>
+        <main className={`${!hideSidebar ? 'flex-1' : 'w-full'} overflow-auto`}>
+          {/* Mobile menu button - only show if sidebar is visible */}
+          {!hideSidebar && (
+            <div className="md:hidden p-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
+                title="Toggle sidebar menu"
+                aria-label="Toggle sidebar menu"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            </div>
+          )}
           
           <div className="p-4 md:p-6">
             {children}

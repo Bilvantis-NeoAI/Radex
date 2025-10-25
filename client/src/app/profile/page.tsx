@@ -6,15 +6,13 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { User, Lock, Settings, Save } from 'lucide-react';
+import ThemeSelector from '@/components/settings/ThemeSelector';
+import useAutoBrightness from '@/hooks/useAutoBrightness';
 
-export default function ProfilePage() {
+// Account Settings Component
+const AccountSettings: React.FC = () => {
   const { user } = useAuth();
-  const [isEditing, setIsEditing] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [formData, setFormData] = useState({
-    username: user?.username || '',
-    email: user?.email || '',
-  });
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -22,20 +20,6 @@ export default function ProfilePage() {
   });
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    try {
-      // TODO: Implement profile update API call
-      setSuccessMessage('Profile updated successfully');
-      setIsEditing(false);
-    } catch {
-      setErrorMessage('Failed to update profile');
-    }
-  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +42,156 @@ export default function ProfilePage() {
   };
 
   return (
+    <div className="space-y-6">
+      {/* Password Management */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-red-100 rounded-lg">
+              <Lock className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Password</h2>
+              <p className="text-gray-600">Change your account password</p>
+            </div>
+          </div>
+
+          {!showPasswordForm && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowPasswordForm(true)}
+            >
+              Change Password
+            </Button>
+          )}
+        </div>
+
+        {showPasswordForm && (
+          <form onSubmit={handleChangePassword}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Password
+                </label>
+                <Input
+                  type="password"
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <Input
+                  type="password"
+                  value={passwordData.newPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm New Password
+                </label>
+                <Input
+                  type="password"
+                  value={passwordData.confirmPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-4 mt-6">
+              <Button type="submit">
+                Update Password
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setShowPasswordForm(false);
+                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Account Status */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Status</h2>
+        <div className="grid grid-cols-1 gap-4">
+          <div className="bg-green-50 p-4 rounded-lg">
+            <div className="text-green-800 font-medium">Account Status</div>
+            <div className="text-green-600">
+              {user?.is_active ? 'Active' : 'Inactive'}
+            </div>
+          </div>
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <div className="text-blue-800 font-medium">User ID</div>
+            <div className="text-blue-600 font-mono text-sm">{user?.id}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Theme Settings Component
+const ThemeSettings: React.FC = () => {
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <div className="flex items-center space-x-3 mb-6">
+        <div className="p-3 bg-purple-100 rounded-lg">
+          <Settings className="w-6 h-6 text-purple-600" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Theme Settings</h2>
+          <p className="text-gray-600">Customize your display preferences</p>
+        </div>
+      </div>
+
+      <ThemeSelector />
+    </div>
+  );
+};
+
+export default function ProfilePage() {
+  const { user } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    username: user?.username || '',
+    email: user?.email || '',
+  });
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Enable auto brightness functionality
+  useAutoBrightness();
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      // TODO: Implement profile update API call
+      setSuccessMessage('Profile updated successfully');
+      setIsEditing(false);
+    } catch {
+      setErrorMessage('Failed to update profile');
+    }
+  };
+
+  return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div>
@@ -71,7 +205,7 @@ export default function ProfilePage() {
           <AlertDescription>{successMessage}</AlertDescription>
         </Alert>
       )}
-      
+
       {errorMessage && (
         <Alert variant="error">
           <AlertDescription>{errorMessage}</AlertDescription>
@@ -90,7 +224,7 @@ export default function ProfilePage() {
               <p className="text-gray-600">Update your account details</p>
             </div>
           </div>
-          
+
           {!isEditing && (
             <Button
               variant="secondary"
@@ -115,7 +249,7 @@ export default function ProfilePage() {
                 disabled={!isEditing}
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email
@@ -176,74 +310,29 @@ export default function ProfilePage() {
               <p className="text-gray-600">Change your account password</p>
             </div>
           </div>
-          
-          {!showPasswordForm && (
-            <Button
-              variant="secondary"
-              onClick={() => setShowPasswordForm(true)}
-            >
-              Change Password
-            </Button>
-          )}
+
+          <Button
+            variant="secondary"
+            onClick={() => {/* Password change logic */}}
+          >
+            Change Password
+          </Button>
+        </div>
+      </div>
+
+      {/* Theme Settings */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-3 bg-purple-100 rounded-lg">
+            <Settings className="w-6 h-6 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Theme Settings</h2>
+            <p className="text-gray-600">Customize your display preferences</p>
+          </div>
         </div>
 
-        {showPasswordForm && (
-          <form onSubmit={handleChangePassword}>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Current Password
-                </label>
-                <Input
-                  type="password"
-                  value={passwordData.currentPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  New Password
-                </label>
-                <Input
-                  type="password"
-                  value={passwordData.newPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Confirm New Password
-                </label>
-                <Input
-                  type="password"
-                  value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="flex space-x-4 mt-6">
-              <Button type="submit">
-                Update Password
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowPasswordForm(false);
-                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        )}
+        <ThemeSelector />
       </div>
 
       {/* Account Status */}

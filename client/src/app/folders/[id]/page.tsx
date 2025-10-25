@@ -25,7 +25,7 @@ import ShareFolderModal from '@/components/folders/ShareFolderModal';
 
 export default function FolderDetailPage() {
   const params = useParams();
-  const folderId = params.id as string;
+  const folderId = params?.id as string;
   
   const [folder, setFolder] = useState<FolderType | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -204,6 +204,8 @@ export default function FolderDetailPage() {
                       setNewName(folder.name);
                     }}
                     className="p-1 text-gray-400 hover:text-gray-600"
+                    title="Edit folder name"
+                    aria-label="Edit folder name"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
@@ -225,7 +227,7 @@ export default function FolderDetailPage() {
               <Shield className="w-4 h-4 mr-2" />
               Permissions
             </Button>
-            <button className="p-2 text-gray-400 hover:text-gray-600">
+            <button className="p-2 text-gray-400 hover:text-gray-600" title="More options" aria-label="More options">
               <MoreVertical className="w-5 h-5" />
             </button>
           </div>
@@ -309,6 +311,7 @@ export default function FolderDetailPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDownload(document.id, document.filename)}
+                      title="Download document"
                     >
                       <Download className="w-4 h-4" />
                     </Button>
@@ -316,6 +319,7 @@ export default function FolderDetailPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDeleteDocument(document.id)}
+                      title="Delete document"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
