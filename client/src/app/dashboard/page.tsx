@@ -6,6 +6,7 @@ import { Folder, FileText, MessageSquare, HardDrive } from 'lucide-react';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import { AxiosError } from 'axios'; // Import AxiosError
 
 interface DashboardStats {
   totalFolders: number;
@@ -15,7 +16,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth(); // Use auth context
   const [stats, setStats] = useState<DashboardStats>({
     totalFolders: 0,
     totalDocuments: 0,
@@ -25,8 +26,20 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    // Only load dashboard data if authenticated and auth state is not loading
+    if (isAuthenticated && !isAuthLoading) {
+      loadDashboardData();
+    } else if (!isAuthenticated && !isAuthLoading) {
+      // If not authenticated and auth state is stable, clear stats and stop loading
+      setStats({
+        totalFolders: 0,
+        totalDocuments: 0,
+        recentQueries: 0,
+        storageUsed: '0 MB',
+      });
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]); // Depend on isAuthenticated and isAuthLoading
 
   const loadDashboardData = async () => {
     try {
@@ -41,6 +54,15 @@ export default function DashboardPage() {
       });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
+      // If unauthorized, clear stats
+      if (error instanceof AxiosError && error.response?.status === 403) {
+        setStats({
+          totalFolders: 0,
+          totalDocuments: 0,
+          recentQueries: 0,
+          storageUsed: '0 MB',
+        });
+      }
     } finally {
       setIsLoading(false);
     }

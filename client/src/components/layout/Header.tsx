@@ -4,10 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, LogOut, Settings, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const router = useRouter();
 
   return (
     <header className="bg-blue-600 text-white shadow-sm">
@@ -82,8 +84,13 @@ export default function Header() {
                 </Link>
                 <button
                   onClick={() => {
-                    logout();
-                    setShowUserMenu(false);
+                  try {
+                      logout();              // end Firebase + backend session
+                      setShowUserMenu(false);
+                      router.push('/login');       // ✅ redirect after logout
+                    } catch (error) {
+                      console.error('Logout failed:', error);
+                    }
                   }}
                   className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 >
