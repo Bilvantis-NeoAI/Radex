@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Folder as FolderType } from '@/types/folder';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -9,36 +9,31 @@ import { Folder, FolderPlus, Grid, List, MoreVertical, Calendar } from 'lucide-r
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQuery and useQueryClient
 
 export default function FoldersPage() {
-  const { isAuthenticated } = useAuth();
-  const [folders, setFolders] = useState<FolderType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth(); // Destructure isLoading as isAuthLoading
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  useEffect(() => {
-    if (isAuthenticated) { // Only load folders if authenticated
-      loadFolders();
-    } else {
-      setFolders([]); // Clear folders if not authenticated
-      setIsLoading(false);
-    }
-  }, [isAuthenticated]); // Add isAuthenticated to dependency array
+  const queryClient = useQueryClient(); // Initialize useQueryClient
 
-  const loadFolders = async () => {
-    try {
-      setIsLoading(true);
-      const data = await apiClient.getFolders();
-      setFolders(data);
-    } catch (error) {
-      console.error('Failed to load folders:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+  const { data: queryFolders, isLoading: isQueryLoading, error } = useQuery<FolderType[], Error>({
+    queryKey: ['folders'],
+    queryFn: async () => {
+      if (!isAuthenticated) {
+        return [];
+      }
+      return apiClient.getFolders();
+    },
+    enabled: isAuthenticated && !isAuthLoading,
+    refetchOnWindowFocus: true,
+  });
+
+  const folders = queryFolders || [];
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -48,7 +43,7 @@ export default function FoldersPage() {
       await apiClient.createFolder({ name: newFolderName });
       setNewFolderName('');
       setShowCreateForm(false);
-      await loadFolders();
+      queryClient.invalidateQueries({ queryKey: ['folders'] }); // Invalidate the query to refetch folders after creation
     } catch (error) {
       console.error('Failed to create folder:', error);
     } finally {
@@ -179,7 +174,7 @@ export default function FoldersPage() {
       )}
 
       {/* Folders Grid/List */}
-      {isLoading ? (
+      {isQueryLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-white rounded-lg shadow animate-pulse">

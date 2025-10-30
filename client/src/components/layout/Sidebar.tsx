@@ -5,6 +5,8 @@ import { Folder, FolderPlus, ChevronRight, ChevronDown } from 'lucide-react';
 import { Folder as FolderType } from '@/types/folder';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -86,26 +88,24 @@ function FolderTree({ folders, level = 0, onFolderSelect }: FolderTreeProps) {
 }
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const [folders, setFolders] = useState<FolderType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const queryClient = useQueryClient();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  useEffect(() => {
-    loadFolders();
-  }, []);
+  const { data, isLoading, error } = useQuery<FolderType[], Error>({
+    queryKey: ['folders'],
+    queryFn: async () => {
+      if (!isAuthenticated) {
+        return [];
+      }
+      return apiClient.getFolders();
+    },
+    enabled: isAuthenticated && !isAuthLoading,
+    refetchOnWindowFocus: true,
+  });
 
-  const loadFolders = async () => {
-    try {
-      setIsLoading(true);
-      const data = await apiClient.getFolders();
-      setFolders(data);
-    } catch (error) {
-      console.error('Failed to load folders:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const folders = data || [];
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -114,7 +114,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       await apiClient.createFolder({ name: newFolderName });
       setNewFolderName('');
       setShowCreateForm(false);
-      loadFolders();
+      queryClient.refetchQueries({ queryKey: ['folders'], type: 'active' }); // Refetch active folders
     } catch (error) {
       console.error('Failed to create folder:', error);
     }
