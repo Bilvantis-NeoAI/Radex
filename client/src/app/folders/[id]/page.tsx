@@ -22,10 +22,12 @@ import {
 import { format } from 'date-fns';
 import { useDropzone } from 'react-dropzone';
 import ShareFolderModal from '@/components/folders/ShareFolderModal';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 export default function FolderDetailPage() {
   const params = useParams();
   const folderId = params.id as string;
+  const { isAuthenticated } = useAuth(); // Use the auth hook
   
   const [folder, setFolder] = useState<FolderType | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -52,10 +54,14 @@ export default function FolderDetailPage() {
   }, [folderId]);
 
   useEffect(() => {
-    if (folderId) {
+    if (folderId && isAuthenticated) { // Only load folder data if authenticated
       loadFolderData();
+    } else if (!isAuthenticated) {
+      setFolder(null); // Clear folder data if not authenticated
+      setDocuments([]);
+      setIsLoading(false);
     }
-  }, [folderId, loadFolderData]);
+  }, [folderId, loadFolderData, isAuthenticated]); // Add isAuthenticated to dependency array
 
   const handleUpdateFolderName = async () => {
     if (!newName.trim() || !folder) return;

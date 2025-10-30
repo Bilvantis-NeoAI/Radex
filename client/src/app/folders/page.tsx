@@ -8,8 +8,10 @@ import { Input } from '@/components/ui/Input';
 import { Folder, FolderPlus, Grid, List, MoreVertical, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function FoldersPage() {
+  const { isAuthenticated } = useAuth();
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -18,8 +20,13 @@ export default function FoldersPage() {
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
-    loadFolders();
-  }, []);
+    if (isAuthenticated) { // Only load folders if authenticated
+      loadFolders();
+    } else {
+      setFolders([]); // Clear folders if not authenticated
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]); // Add isAuthenticated to dependency array
 
   const loadFolders = async () => {
     try {
