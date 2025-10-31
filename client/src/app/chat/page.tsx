@@ -22,10 +22,12 @@ import {
   Trash2,
   Info
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const CONTEXT_WINDOW_SIZE = 5;
 
 export default function ChatPage() {
+  const { isAuthenticated } = useAuth(); // Use the auth hook
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<UIChatMessage[]>([]);
@@ -36,8 +38,14 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadRAGFolders();
-  }, []);
+    if (isAuthenticated) { // Only load RAG folders if authenticated
+      loadRAGFolders();
+    } else {
+      setFolders([]); // Clear folders if not authenticated
+      setSelectedFolders(new Set()); // Clear selected folders
+      setIsFoldersLoading(false);
+    }
+  }, [isAuthenticated]); // Add isAuthenticated to dependency array
 
   useEffect(() => {
     scrollToBottom();

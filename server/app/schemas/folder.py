@@ -49,6 +49,8 @@ class PermissionInfo(BaseModel):
     is_admin: bool
     granted_by: Optional[UUID]
     created_at: datetime
+    username: Optional[str]
+    email: Optional[str]
     
     class Config:
         from_attributes = True

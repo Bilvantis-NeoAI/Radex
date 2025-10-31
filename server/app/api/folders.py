@@ -11,6 +11,7 @@ from app.models import Folder as FolderModel, User as UserModel
 from app.core.dependencies import get_current_active_user
 from app.core.exceptions import NotFoundException, ConflictException, PermissionDeniedException
 from app.services.permission_service import PermissionService
+from app.services.auth_service import AuthService
 
 router = APIRouter()
 
@@ -188,7 +189,9 @@ async def grant_folder_permission(
 ):
     """Grant permission to a user for a folder"""
     permission_service = PermissionService(db)
-    
+    auth_service = AuthService(db) # Instantiate AuthService
+    User = auth_service.get_user_by_id(permission_grant.user_id) # Call on instance
+
     permission = permission_service.grant_permission(
         granter_id=current_user.id,
         user_id=permission_grant.user_id,
@@ -196,9 +199,11 @@ async def grant_folder_permission(
         can_read=permission_grant.can_read,
         can_write=permission_grant.can_write,
         can_delete=permission_grant.can_delete,
-        is_admin=permission_grant.is_admin
+        is_admin=permission_grant.is_admin,
+        username=User.username,
+        email=User.email 
     )
-    
+
     return permission
 
 @router.get("/{folder_id}/permissions", response_model=List[PermissionInfo])

@@ -34,6 +34,8 @@ interface FolderPermission {
   is_admin: boolean;
   granted_by: string;
   created_at: string;
+  username: string;
+  email: string;
   user?: {
     id: string;
     username: string;
@@ -347,10 +349,10 @@ export default function ShareFolderModal({ isOpen, onClose, folderId, folderName
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {permission.user?.username || 'Unknown User'}
+                        {permission.username || 'Unknown User'}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {permission.user?.email || 'No email available'}
+                        {permission.email || 'No email available'}
                       </div>
                     </div>
                   </div>

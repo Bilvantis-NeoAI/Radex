@@ -89,6 +89,8 @@ class PermissionService:
         granter_id: UUID,
         user_id: UUID,
         folder_id: UUID,
+        email: str,
+        username: str,
         can_read: bool = False,
         can_write: bool = False,
         can_delete: bool = False,
@@ -126,7 +128,9 @@ class PermissionService:
                 can_write=can_write,
                 can_delete=can_delete,
                 is_admin=is_admin,
-                granted_by=granter_id
+                granted_by=granter_id,
+                email=email,
+                username=username
             )
             self.db.add(existing_permission)
         
