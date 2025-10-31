@@ -5,18 +5,21 @@ import { Folder as FolderType } from '@/types/folder';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal'; // Import Modal
+import { Alert, AlertDescription } from '@/components/ui/Alert'; // Import Alert and AlertDescription
 import { Folder, FolderPlus, Grid, List, MoreVertical, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQuery and useQueryClient
-
 export default function FoldersPage() {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth(); // Destructure isLoading as isAuthLoading
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [errorModalOpen, setErrorModalOpen] = useState(false); // State for error modal
+  const [errorMessage, setErrorMessage] = useState(''); // State for error message
 
   const queryClient = useQueryClient(); // Initialize useQueryClient
 
@@ -44,8 +47,10 @@ export default function FoldersPage() {
       setNewFolderName('');
       setShowCreateForm(false);
       queryClient.invalidateQueries({ queryKey: ['folders'] }); // Invalidate the query to refetch folders after creation
-    } catch (error) {
-      console.error('Failed to create folder:', error);
+    } catch (error: any) { // Explicitly type error as 'any' for now to access response
+      const message = error.response?.data?.detail || 'Failed to create folder.';
+      setErrorMessage(message);
+      setErrorModalOpen(true);
     } finally {
       setIsCreating(false);
     }
@@ -172,6 +177,20 @@ export default function FoldersPage() {
           </div>
         </div>
       )}
+
+      {/* Warning Modal */}
+      <Modal
+        isOpen={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        title="Warning"
+      >
+        <Alert variant="warning">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+        <div className="flex justify-end mt-4">
+          <Button onClick={() => setErrorModalOpen(false)}>Close</Button>
+        </div>
+      </Modal>
 
       {/* Folders Grid/List */}
       {isQueryLoading ? (

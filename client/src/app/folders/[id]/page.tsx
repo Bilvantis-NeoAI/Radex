@@ -7,6 +7,8 @@ import { Document } from '@/types/document';
 import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal'; // Import Modal
+import { Alert, AlertDescription } from '@/components/ui/Alert'; // Import Alert and AlertDescription
 import { 
   Folder, 
   FileText, 
@@ -23,7 +25,6 @@ import { format } from 'date-fns';
 import { useDropzone } from 'react-dropzone';
 import ShareFolderModal from '@/components/folders/ShareFolderModal';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-
 export default function FolderDetailPage() {
   const params = useParams();
   const folderId = params.id as string;
@@ -36,6 +37,14 @@ export default function FolderDetailPage() {
   const [newName, setNewName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [errorModalOpen, setErrorModalOpen] = useState(false); // State for error modal
+  const [errorMessage, setErrorMessage] = useState(''); // State for error message
+
+  const handleError = (error: any, defaultMessage: string) => {
+    const message = error.response?.data?.detail || defaultMessage;
+    setErrorMessage(message);
+    setErrorModalOpen(true);
+  };
 
   const loadFolderData = useCallback(async () => {
     try {
@@ -46,8 +55,8 @@ export default function FolderDetailPage() {
       ]);
       setFolder(folderData);
       setDocuments(documentsData);
-    } catch (error) {
-      console.error('Failed to load folder data:', error);
+    } catch (error: any) {
+      handleError(error, 'Failed to load folder data.');
     } finally {
       setIsLoading(false);
     }
@@ -71,8 +80,8 @@ export default function FolderDetailPage() {
       setFolder({ ...folder, name: newName });
       setIsEditingName(false);
       setNewName('');
-    } catch (error) {
-      console.error('Failed to update folder name:', error);
+    } catch (error: any) {
+      handleError(error, 'Failed to update folder name.');
     }
   };
 
@@ -82,8 +91,8 @@ export default function FolderDetailPage() {
     try {
       await apiClient.deleteDocument(documentId);
       setDocuments(documents.filter(doc => doc.id !== documentId));
-    } catch (error) {
-      console.error('Failed to delete document:', error);
+    } catch (error: any) {
+      handleError(error, 'Failed to delete document.');
     }
   };
 
@@ -98,8 +107,8 @@ export default function FolderDetailPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to download document:', error);
+    } catch (error: any) {
+      handleError(error, 'Failed to download document.');
     }
   };
 
@@ -111,8 +120,8 @@ export default function FolderDetailPage() {
         await apiClient.uploadDocument(folderId, file);
       }
       await loadFolderData(); // Reload to show new documents
-    } catch (error) {
-      console.error('Failed to upload files:', error);
+    } catch (error: any) {
+      handleError(error, 'Failed to upload files.');
     } finally {
       setIsUploading(false);
     }
@@ -348,6 +357,20 @@ export default function FolderDetailPage() {
           folderName={folder.name}
         />
       )}
+
+      {/* Warning Modal */}
+      <Modal
+        isOpen={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        title="Warning"
+      >
+        <Alert variant="warning">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+        <div className="flex justify-end mt-4">
+          <Button onClick={() => setErrorModalOpen(false)}>Close</Button>
+        </div>
+      </Modal>
     </div>
   );
 }

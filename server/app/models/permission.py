@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Boolean, DateTime, func, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Boolean, DateTime, func, ForeignKey, UniqueConstraint, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -16,6 +16,8 @@ class Permission(Base):
     is_admin = Column(Boolean, default=False)
     granted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=True, index=True)  # Now nullable for Firebase users
     
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
