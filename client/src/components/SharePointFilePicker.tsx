@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import {
@@ -61,15 +61,7 @@ export function SharePointFilePicker({
   // Selection state
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (isOpen && connectionId) {
-      if (activeTab === 'onedrive') {
-        loadOneDrive();
-      }
-    }
-  }, [isOpen, connectionId, activeTab]);
-
-  const loadOneDrive = async () => {
+  const loadOneDrive = useCallback(async () => {
     if (!connectionId) return;
 
     try {
@@ -83,13 +75,25 @@ export function SharePointFilePicker({
       // Load root items
       const response = await apiClient.getDriveChildren(connectionId, drive.id, 'root');
       setItems(response.items);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load OneDrive');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to load OneDrive';
+      setError(errorMessage);
       console.error('Failed to load OneDrive:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [connectionId]);
+
+  useEffect(() => {
+    if (isOpen && connectionId && activeTab === 'onedrive') {
+      loadOneDrive();
+    }
+  }, [isOpen, connectionId, activeTab, loadOneDrive]);
 
   const navigateToFolder = async (item: DriveItem) => {
     if (!connectionId || !driveInfo) return;
@@ -108,8 +112,14 @@ export function SharePointFilePicker({
 
       // Update breadcrumbs
       setBreadcrumbs([...breadcrumbs, { id: item.id, name: item.name }]);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to navigate to folder');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to navigate to folder';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -133,8 +143,14 @@ export function SharePointFilePicker({
 
       // Update breadcrumbs
       setBreadcrumbs(breadcrumbs.slice(0, index + 1));
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to navigate');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to navigate';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -149,8 +165,14 @@ export function SharePointFilePicker({
 
       const response = await apiClient.searchSharePointSites(connectionId, siteSearch);
       setSites(response.sites);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to search sites');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to search sites';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -166,8 +188,14 @@ export function SharePointFilePicker({
 
       const response = await apiClient.getSiteDrives(connectionId, site.id);
       setDrives(response.drives);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load site drives');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to load site drives';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -184,8 +212,14 @@ export function SharePointFilePicker({
       const response = await apiClient.getDriveChildren(connectionId, drive.id, 'root');
       setItems(response.items);
       setBreadcrumbs([{ id: 'root', name: drive.name }]);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load drive');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to load drive';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -234,8 +268,14 @@ export function SharePointFilePicker({
       onImportComplete(result);
       setSelectedFiles(new Set());
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to import files');
+    } catch (err: unknown) {
+      const errorMessage =
+        err && typeof err === 'object' && 'response' in err &&
+        err.response && typeof err.response === 'object' && 'data' in err.response &&
+        err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+          ? String(err.response.data.detail)
+          : 'Failed to import files';
+      setError(errorMessage);
     } finally {
       setImporting(false);
     }
@@ -411,7 +451,7 @@ export function SharePointFilePicker({
         <div>
           <div className="mb-4">
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
               onClick={() => {
                 setSelectedSite(null);
@@ -461,7 +501,7 @@ export function SharePointFilePicker({
       <div>
         <div className="mb-4">
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => {
               setSelectedDrive(null);
@@ -532,7 +572,7 @@ export function SharePointFilePicker({
             )}
           </div>
           <div className="flex space-x-2">
-            <Button variant="outline" onClick={onClose} disabled={importing}>
+            <Button variant="secondary" onClick={onClose} disabled={importing}>
               Cancel
             </Button>
             <Button

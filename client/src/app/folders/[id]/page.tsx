@@ -45,7 +45,6 @@ export default function FolderDetailPage() {
   const [showSourceSelection, setShowSourceSelection] = useState(false);
   const [showSharePointPicker, setShowSharePointPicker] = useState(false);
   const [sharePointConnectionId, setSharePointConnectionId] = useState<string | null>(null);
-  const [uploadMode, setUploadMode] = useState<'local' | 'sharepoint' | null>(null);
   const [importResult, setImportResult] = useState<SyncImportResponse | null>(null);
 
   const loadFolderData = useCallback(async () => {
@@ -127,7 +126,6 @@ export default function FolderDetailPage() {
 
   // SharePoint integration handlers
   const handleSelectLocal = () => {
-    setUploadMode('local');
     // Trigger the file input click programmatically
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     if (fileInput) fileInput.click();

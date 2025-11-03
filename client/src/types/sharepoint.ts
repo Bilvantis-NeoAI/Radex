@@ -38,6 +38,15 @@ export interface ProviderConnectionsResponse {
 
 export type DriveItemType = 'file' | 'folder';
 
+export interface ParentReference {
+  driveId?: string;
+  driveType?: string;
+  id?: string;
+  name?: string;
+  path?: string;
+  siteId?: string;
+}
+
 export interface DriveItem {
   id: string;
   name: string;
@@ -48,7 +57,7 @@ export interface DriveItem {
   e_tag?: string;
   mime_type?: string;
   drive_id: string;
-  parent_reference?: Record<string, any>;
+  parent_reference?: ParentReference;
   is_synced: boolean;
 }
 
@@ -57,13 +66,26 @@ export interface DriveItemsResponse {
   next_link?: string;
 }
 
+export interface DriveOwner {
+  user?: {
+    displayName?: string;
+    email?: string;
+    id?: string;
+  };
+  group?: {
+    displayName?: string;
+    email?: string;
+    id?: string;
+  };
+}
+
 export interface DriveInfo {
   id: string;
   name: string;
   description?: string;
   drive_type: string;
   web_url?: string;
-  owner?: Record<string, any>;
+  owner?: DriveOwner;
 }
 
 export interface DrivesResponse {

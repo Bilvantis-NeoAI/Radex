@@ -128,7 +128,7 @@ export function SourceSelectionModal({
         )}
 
         <div className="pt-4 flex justify-end">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
         </div>

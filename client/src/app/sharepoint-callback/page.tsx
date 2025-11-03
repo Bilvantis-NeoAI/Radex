@@ -54,10 +54,16 @@ export default function SharePointCallback() {
         setTimeout(() => {
           router.push('/folders?sp_auth=success');
         }, 1500);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('OAuth callback error:', err);
         setStatus('error');
-        setMessage(err.response?.data?.detail || 'Failed to complete authentication');
+        const errorMessage =
+          err && typeof err === 'object' && 'response' in err &&
+          err.response && typeof err.response === 'object' && 'data' in err.response &&
+          err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
+            ? String(err.response.data.detail)
+            : 'Failed to complete authentication';
+        setMessage(errorMessage);
 
         setTimeout(() => {
           router.push('/folders?sp_auth=error');
