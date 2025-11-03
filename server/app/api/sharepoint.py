@@ -36,7 +36,6 @@ from app.core.exceptions import BadRequestException, NotFoundException
 from app.config import settings
 
 router = APIRouter(
-    prefix="/providers/sharepoint",
     tags=["SharePoint Provider"],
 )
 

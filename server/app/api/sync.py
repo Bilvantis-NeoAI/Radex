@@ -33,7 +33,6 @@ from app.core.exceptions import BadRequestException, NotFoundException, Permissi
 from app.config import settings
 
 router = APIRouter(
-    prefix="/sync",
     tags=["File Sync"],
 )
 

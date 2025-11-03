@@ -14,7 +14,6 @@ from app.schemas.sharepoint import ProvidersConfigResponse, ProviderInfo
 from app.config import settings
 
 router = APIRouter(
-    prefix="/config",
     tags=["Configuration"],
 )
 
