@@ -55,6 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (idToken) {
               console.log('Authenticating with backend...');
+              // Only introduce a delay if the user was not previously logged in (i.e., it's a fresh login)
+              if (!user) { // 'user' state is null if not authenticated with backend yet
+                await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 second delay
+              }
+
               // Authenticate with backend
               const userData = await apiClient.firebaseLogin(idToken);
               console.log('Backend authentication successful:', userData.email);

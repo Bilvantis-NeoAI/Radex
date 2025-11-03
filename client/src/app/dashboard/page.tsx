@@ -7,6 +7,8 @@ import apiClient from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { AxiosError } from 'axios'; // Import AxiosError
+import { useQuery } from '@tanstack/react-query'; // Import useQuery
+import { Folder as FolderType } from '@/types/folder'; // Import FolderType
 
 interface DashboardStats {
   totalFolders: number;
@@ -17,6 +19,19 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth(); // Use auth context
+  
+  // Use useQuery to fetch folders
+  const { data: folders, isLoading: isLoadingFolders, error: foldersError } = useQuery<FolderType[], Error>({
+    queryKey: ['folders'],
+    queryFn: async () => {
+      if (!isAuthenticated) {
+        return [];
+      }
+      return apiClient.getFolders();
+    },
+    enabled: isAuthenticated && !isAuthLoading,
+  });
+
   const [stats, setStats] = useState<DashboardStats>({
     totalFolders: 0,
     totalDocuments: 0,
@@ -26,11 +41,15 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Only load dashboard data if authenticated and auth state is not loading
-    if (isAuthenticated && !isAuthLoading) {
-      loadDashboardData();
+    if (isAuthenticated && !isAuthLoading && folders) {
+      setStats({
+        totalFolders: folders.length,
+        totalDocuments: 0, // TODO: Implement proper document count via separate API call
+        recentQueries: 0, // TODO: Implement query history
+        storageUsed: '0 MB', // TODO: Calculate storage usage
+      });
+      setIsLoading(false);
     } else if (!isAuthenticated && !isAuthLoading) {
-      // If not authenticated and auth state is stable, clear stats and stop loading
       setStats({
         totalFolders: 0,
         totalDocuments: 0,
@@ -39,34 +58,7 @@ export default function DashboardPage() {
       });
       setIsLoading(false);
     }
-  }, [isAuthenticated, isAuthLoading]); // Depend on isAuthenticated and isAuthLoading
-
-  const loadDashboardData = async () => {
-    try {
-      setIsLoading(true);
-      const folders = await apiClient.getFolders();
-      
-      setStats({
-        totalFolders: folders.length,
-        totalDocuments: 0, // TODO: Implement proper document count via separate API call
-        recentQueries: 0, // TODO: Implement query history
-        storageUsed: '0 MB', // TODO: Calculate storage usage
-      });
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-      // If unauthorized, clear stats
-      if (error instanceof AxiosError && error.response?.status === 403) {
-        setStats({
-          totalFolders: 0,
-          totalDocuments: 0,
-          recentQueries: 0,
-          storageUsed: '0 MB',
-        });
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isAuthenticated, isAuthLoading, folders]); // Depend on isAuthenticated, isAuthLoading, and folders
 
   const statsCards = [
     {
