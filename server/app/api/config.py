@@ -72,6 +72,38 @@ async def get_providers_config(db: Session = Depends(get_db)):
         )
     )
 
+    # Confluence Provider
+    # Check ENV flag
+    confluence_env_enabled = settings.enable_confluence_provider
+
+    # Check if credentials are configured
+    confluence_credentials_configured = all([
+        settings.confluence_client_id,
+        settings.confluence_client_secret,
+        settings.confluence_redirect_uri,
+        settings.encryption_key,
+    ])
+
+    # Check DB configuration
+    confluence_db_config = (
+        db.query(ProviderConfig)
+        .filter(ProviderConfig.provider == "confluence")
+        .first()
+    )
+    confluence_db_enabled = confluence_db_config.is_enabled if confluence_db_config else False
+
+    # Provider is available if ENV enabled AND DB enabled AND credentials configured
+    confluence_is_enabled = confluence_env_enabled and confluence_db_enabled and confluence_credentials_configured
+
+    providers.append(
+        ProviderInfo(
+            provider="confluence",
+            display_name="Atlassian Confluence",
+            is_enabled=confluence_is_enabled,
+            is_configured=confluence_credentials_configured,
+        )
+    )
+
     # Future providers can be added here
     # Example:
     # providers.append(ProviderInfo(

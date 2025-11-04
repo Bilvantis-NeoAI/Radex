@@ -33,9 +33,11 @@ class ProviderItemRef(Base):
     # Link to imported document
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
 
-    # Microsoft Graph identifiers
-    drive_id = Column(String(255), nullable=False, comment="SharePoint/OneDrive drive ID")
-    item_id = Column(String(255), nullable=False, comment="SharePoint/OneDrive item ID")
+    # Provider-specific identifiers
+    # SharePoint: drive_id = drive ID, item_id = item ID
+    # Confluence: drive_id = space key, item_id = page/content ID
+    drive_id = Column(String(255), nullable=False, comment="Container ID (SharePoint drive ID or Confluence space key)")
+    item_id = Column(String(255), nullable=False, comment="Item ID (SharePoint item ID or Confluence page/content ID)")
     etag = Column(String(255), nullable=True, comment="Entity tag for change detection")
 
     # File metadata (cached for display)

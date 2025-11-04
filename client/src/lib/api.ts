@@ -491,6 +491,103 @@ class ApiClient {
     const response = await this.client.post('/api/v1/sync/import', data);
     return response.data; // { total, succeeded, skipped, failed, results: [...] }
   }
+
+  // Confluence Provider OAuth endpoints
+
+  /**
+   * Start Confluence OAuth flow
+   * Returns authorization URL to redirect user to
+   */
+  async startConfluenceAuth() {
+    const response = await this.client.post('/api/v1/providers/confluence/auth/start');
+    return response.data; // { auth_url, state }
+  }
+
+  /**
+   * Complete Confluence OAuth flow
+   * Exchange authorization code for connection
+   */
+  async completeConfluenceAuth(code: string, state: string) {
+    const response = await this.client.post('/api/v1/providers/confluence/auth/callback', {
+      code,
+      state,
+    });
+    return response.data; // { connection_id, cloud_id, created_at }
+  }
+
+  /**
+   * Disconnect Confluence connection
+   */
+  async disconnectConfluence(connectionId: string) {
+    await this.client.delete(`/api/v1/providers/confluence/connections/${connectionId}`);
+  }
+
+  /**
+   * List user's Confluence connections
+   */
+  async getConfluenceConnections() {
+    const response = await this.client.get('/api/v1/providers/confluence/connections');
+    return response.data; // { connections: [...] }
+  }
+
+  /**
+   * Get Confluence spaces
+   */
+  async getConfluenceSpacesOAuth(connectionId: string, start: number = 0, limit: number = 25) {
+    const response = await this.client.get(
+      `/api/v1/providers/confluence/${connectionId}/spaces`,
+      { params: { start, limit } }
+    );
+    return response.data; // { spaces: [...], next_link: ... }
+  }
+
+  /**
+   * Get pages in a Confluence space
+   */
+  async getConfluenceSpacePagesOAuth(
+    connectionId: string,
+    spaceKey: string,
+    start: number = 0,
+    limit: number = 25
+  ) {
+    const response = await this.client.get(
+      `/api/v1/providers/confluence/${connectionId}/spaces/${spaceKey}/pages`,
+      { params: { start, limit } }
+    );
+    return response.data; // { pages: [...], next_link: ... }
+  }
+
+  /**
+   * Search Confluence content
+   */
+  async searchConfluenceContentOAuth(
+    connectionId: string,
+    query: string,
+    start: number = 0,
+    limit: number = 25
+  ) {
+    const response = await this.client.get(
+      `/api/v1/providers/confluence/${connectionId}/search`,
+      { params: { query, start, limit } }
+    );
+    return response.data; // { results: [...], total_size: number, next_link: ... }
+  }
+
+  /**
+   * Import pages from Confluence into RADEX
+   */
+  async importFromConfluence(data: {
+    connection_id: string;
+    folder_id: string;
+    items: Array<{
+      space_key: string;
+      content_id: string;
+      version?: number;
+    }>;
+  }) {
+    const response = await this.client.post('/api/v1/sync/confluence/import', data);
+    return response.data; // { total, succeeded, skipped, failed, results: [...] }
+  }
 }
 
 export const apiClient = new ApiClient();

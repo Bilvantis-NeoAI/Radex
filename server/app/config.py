@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     sp_client_secret: Optional[str] = None  # Microsoft App Registration Client Secret
     sp_redirect_uri: Optional[str] = None  # OAuth callback URL
 
+    # Confluence Provider
+    enable_confluence_provider: bool = False  # ENV-based feature flag
+    confluence_client_id: Optional[str] = None  # Atlassian OAuth2 Client ID
+    confluence_client_secret: Optional[str] = None  # Atlassian OAuth2 Client Secret
+    confluence_redirect_uri: Optional[str] = None  # OAuth callback URL
+
     # Token Encryption (for provider OAuth tokens)
     encryption_key: Optional[str] = None  # Fernet encryption key (base64)
 

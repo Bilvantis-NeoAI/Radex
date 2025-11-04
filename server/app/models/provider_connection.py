@@ -18,6 +18,7 @@ from app.database import Base
 class ProviderType(str, enum.Enum):
     """Supported file provider types."""
     sharepoint = "sharepoint"
+    confluence = "confluence"
 
 
 class ProviderConnection(Base):
@@ -33,7 +34,7 @@ class ProviderConnection(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider = Column(SQLEnum(ProviderType), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    tenant_id = Column(String(255), nullable=False, comment="Microsoft 365 tenant ID")
+    tenant_id = Column(String(255), nullable=True, comment="Provider instance ID (Microsoft 365 tenant ID or Atlassian cloud ID)")
 
     # Encrypted token storage - contains Fernet-encrypted JSON with access_token, refresh_token, expires_at
     encrypted_tokens = Column(Text, nullable=False, comment="Fernet-encrypted token data")

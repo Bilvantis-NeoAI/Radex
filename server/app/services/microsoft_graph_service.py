@@ -7,6 +7,8 @@ All API calls go through this service to ensure proper token refresh and error h
 
 import httpx
 import secrets
+import hashlib
+import base64
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -66,12 +68,13 @@ class MicrosoftGraphService:
     # OAuth Flow
     # ========================================================================
 
-    def generate_auth_url(self, state: str) -> str:
+    def generate_auth_url(self, state: str, code_challenge: str) -> str:
         """
-        Generate Microsoft OAuth authorization URL.
+        Generate Microsoft OAuth authorization URL with PKCE.
 
         Args:
             state: CSRF protection state parameter
+            code_challenge: PKCE code challenge (SHA256 hash of code_verifier)
 
         Returns:
             Authorization URL to redirect user to
@@ -83,17 +86,20 @@ class MicrosoftGraphService:
             "response_mode": "query",
             "scope": " ".join(self.REQUIRED_SCOPES),
             "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
         return f"{self.OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
 
     async def exchange_code_for_tokens(
-        self, code: str
+        self, code: str, code_verifier: str
     ) -> Tuple[Dict[str, Any], str]:
         """
-        Exchange authorization code for access and refresh tokens.
+        Exchange authorization code for access and refresh tokens with PKCE.
 
         Args:
             code: Authorization code from OAuth callback
+            code_verifier: PKCE code verifier used to generate the challenge
 
         Returns:
             Tuple of (token_data dict, tenant_id string)
@@ -107,6 +113,7 @@ class MicrosoftGraphService:
             "code": code,
             "redirect_uri": self.redirect_uri,
             "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
         }
 
         async with httpx.AsyncClient() as client:
@@ -463,3 +470,35 @@ def generate_state_token() -> str:
         URL-safe random string
     """
     return secrets.token_urlsafe(32)
+
+
+def generate_pkce_verifier() -> str:
+    """
+    Generate a PKCE code verifier.
+
+    A cryptographically random string using the characters [A-Z], [a-z], [0-9],
+    and the punctuation characters "-", ".", "_", "~", with a minimum length of
+    43 characters and a maximum length of 128 characters.
+
+    Returns:
+        URL-safe random string (code verifier)
+    """
+    return secrets.token_urlsafe(64)  # Generates ~86 character string
+
+
+def generate_pkce_challenge(verifier: str) -> str:
+    """
+    Generate a PKCE code challenge from a code verifier.
+
+    Uses SHA256 hashing and base64url encoding as per RFC 7636.
+
+    Args:
+        verifier: The code verifier string
+
+    Returns:
+        Base64url-encoded SHA256 hash of the verifier (code challenge)
+    """
+    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+    # Base64url encode (no padding)
+    challenge = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+    return challenge

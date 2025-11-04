@@ -30,7 +30,12 @@ from app.schemas.sharepoint import (
     SitesResponse,
     SiteInfo,
 )
-from app.services.microsoft_graph_service import MicrosoftGraphService, generate_state_token
+from app.services.microsoft_graph_service import (
+    MicrosoftGraphService,
+    generate_state_token,
+    generate_pkce_verifier,
+    generate_pkce_challenge,
+)
 from app.services.token_encryption_service import get_token_encryption_service
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.config import settings
@@ -40,8 +45,8 @@ router = APIRouter(
 )
 
 # In-memory state storage (in production, use Redis with TTL)
-# Maps state -> user_id for OAuth CSRF protection
-_oauth_states: dict[str, UUID] = {}
+# Maps state -> (user_id, code_verifier) for OAuth CSRF protection and PKCE
+_oauth_states: dict[str, tuple[UUID, str]] = {}
 
 
 def check_sharepoint_enabled():
@@ -74,18 +79,24 @@ async def start_oauth_flow(
     Generates authorization URL and secure state token. Frontend should
     redirect user to the returned auth_url.
 
-    **Security**: State token is stored server-side for CSRF protection.
+    **Security**:
+    - State token is stored server-side for CSRF protection
+    - PKCE (Proof Key for Code Exchange) is used for additional security
     """
     graph_service = MicrosoftGraphService(db)
 
     # Generate secure state token
     state = generate_state_token()
 
-    # Store state with user ID for validation in callback
-    _oauth_states[state] = current_user.id
+    # Generate PKCE verifier and challenge
+    code_verifier = generate_pkce_verifier()
+    code_challenge = generate_pkce_challenge(code_verifier)
 
-    # Generate Microsoft authorization URL
-    auth_url = graph_service.generate_auth_url(state)
+    # Store state with user ID and code_verifier for validation in callback
+    _oauth_states[state] = (current_user.id, code_verifier)
+
+    # Generate Microsoft authorization URL with PKCE
+    auth_url = graph_service.generate_auth_url(state, code_challenge)
 
     return SharePointAuthStartResponse(auth_url=auth_url, state=state)
 
@@ -104,13 +115,16 @@ async def oauth_callback(
 
     **Security**:
     - Validates state parameter against stored value
+    - Validates PKCE code_verifier
     - Tokens are encrypted before database storage
     - Returns only connection_id, never tokens
     """
-    # Validate state parameter
-    user_id = _oauth_states.pop(callback_data.state, None)
-    if not user_id:
+    # Validate state parameter and retrieve code_verifier
+    state_data = _oauth_states.pop(callback_data.state, None)
+    if not state_data:
         raise BadRequestException("Invalid or expired state parameter")
+
+    user_id, code_verifier = state_data
 
     # Get user from database
     user = db.query(User).filter(User.id == user_id).first()
@@ -119,8 +133,10 @@ async def oauth_callback(
 
     graph_service = MicrosoftGraphService(db)
 
-    # Exchange code for tokens
-    token_data, tenant_id = await graph_service.exchange_code_for_tokens(callback_data.code)
+    # Exchange code for tokens with PKCE verifier
+    token_data, tenant_id = await graph_service.exchange_code_for_tokens(
+        callback_data.code, code_verifier
+    )
 
     # Encrypt tokens
     encryption_service = get_token_encryption_service()

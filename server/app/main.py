@@ -6,7 +6,7 @@ import uvicorn
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.api import auth, folders, documents, rag, users, sharepoint, sync, config
+from app.api import auth, folders, documents, rag, users, sharepoint, confluence, sync, config
 from app.core.exceptions import (
     CredentialsException,
     PermissionDeniedException,
@@ -84,6 +84,7 @@ app.include_router(rag.router, prefix="/api/v1/rag", tags=["rag"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(config.router, prefix="/api/v1/config", tags=["configuration"])
 app.include_router(sharepoint.router, prefix="/api/v1/providers/sharepoint", tags=["sharepoint"])
+app.include_router(confluence.router, prefix="/api/v1/providers/confluence", tags=["confluence"])
 app.include_router(sync.router, prefix="/api/v1/sync", tags=["sync"])
 
 # Root endpoints
