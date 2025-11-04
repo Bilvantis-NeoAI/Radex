@@ -14,49 +14,46 @@ jobs:
       - name: 🧾 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🪪 Log branch info
-        run: echo "🚀 Triggered by branch: $GITHUB_REF_NAME"
-
-      - name: 🔑 Set up SSH
+      - name:  Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VM_SSH_KEY }}
 
-      - name: 📦 Deploy to VM
+      - name: Deploy to VM
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
-            echo "🔁 Navigating to project directory..."
+            echo " Navigating to project directory..."
             cd /root/Radex
 
-            echo "📥 Pulling latest code..."
+            echo "Pulling latest code..."
             git pull origin feature/test
 
-            echo "🐳 Step 1: Start backend Docker dependencies..."
+            echo "Step 1: Start backend Docker dependencies..."
             cd server
             sudo docker compose -f dev-docker-compose.yml up -d
 
-            echo "🐍 Step 2: Setting up Python virtual environment..."
+            echo "Step 2: Setting up Python virtual environment..."
             python3 -m venv .venv
             source .venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements-dev.txt
 
-            echo "🗃 Step 3: Running database migrations..."
+            echo "Step 3: Running database migrations..."
             python3 migration.py upgrade
 
-            echo "⚙️ Step 4: Starting backend with PM2..."
+            echo " Step 4: Starting backend with PM2..."
             pm2 delete my-backend || true
             pm2 start bash --name my-backend -- -c ". .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
-            echo "🎨 Step 5: Starting frontend..."
+            echo "Step 5: Starting frontend..."
             cd ../client
             pm2 delete frontend || true
             pm2 start "npm run dev" --name frontend
 
-            echo "✅ Deployment complete!"
+            echo "Deployment complete!"
           EOF
 
-      - name: 🌐 Health check
+      - name: Health check
         run: |
           echo "Checking if site is reachable..."
           curl -I --silent --fail https://radexbillgo.bilvantis.com || echo "⚠️ Site did not respond over HTTPS yet."
