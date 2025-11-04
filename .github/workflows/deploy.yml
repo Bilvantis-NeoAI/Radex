@@ -59,4 +59,4 @@ jobs:
       - name: 🌐 Health check
         run: |
           echo "Checking if site is reachable..."
-          curl -I --silent --fail https://yourdomain.com || echo "⚠️ Site did not respond over HTTPS yet."
+          curl -I --silent --fail https://radexbillgo.bilvantis.com || echo "⚠️ Site did not respond over HTTPS yet."
