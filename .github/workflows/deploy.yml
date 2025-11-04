@@ -1,4 +1,4 @@
-name: Radex BillGo Deployment
+name: Radex BillGo Automation Deployment
 
 on:
   push:
