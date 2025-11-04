@@ -42,13 +42,16 @@ jobs:
             python3 migration.py upgrade
 
             echo " Step 4: Starting backend with PM2..."
+            pm2 stop my-backend || true
             pm2 delete my-backend || true
             pm2 start bash --name my-backend -- -c ". .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
             echo "Step 5: Starting frontend..."
             cd ../client
+            pm2 stop frontend || true
             pm2 delete frontend || true
             pm2 start "npm run dev" --name frontend
+            pm2 save
 
             echo "Deployment complete!"
           EOF
