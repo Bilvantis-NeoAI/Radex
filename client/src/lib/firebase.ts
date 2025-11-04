@@ -31,6 +31,7 @@ const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  providerId: process.env.NEXT_PUBLIC_PROVIDER_ID,
 };
 
 // Initialize Firebase (only once)
@@ -62,7 +63,7 @@ microsoftProvider.setCustomParameters({
 
 // Okta provider (using OAuthProvider for OIDC)
 // Note: The provider ID should match what's configured in Firebase Console
-const oktaProviderId = 'oidc.okta';  // Okta OIDC provider ID from Firebase
+const oktaProviderId = firebaseConfig.providerId!;  // Okta OIDC provider ID from Firebase
 const oktaProvider = new OAuthProvider(oktaProviderId);
 
 /**
