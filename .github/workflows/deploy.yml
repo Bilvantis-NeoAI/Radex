@@ -1,0 +1,65 @@
+name: Radex BillGo Deployment
+
+on:
+  push:
+    branches:
+      - feature/test      
+  workflow_dispatch:    
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🪪 Log branch info
+        run: echo "🚀 Triggered by branch: $GITHUB_REF_NAME"
+
+      - name: 🔑 Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+
+      - name: 📦 Deploy to VM
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            echo "🔁 Navigating to project directory..."
+            cd /root/radex_forked
+
+            echo "📥 Pulling latest code..."
+            git pull origin feature/test
+
+            echo "🧹 Cleaning up old Docker containers, images, and volumes..."
+            docker compose -f server/dev-docker-compose.yml down -v --rmi all || true
+
+            echo "🐳 Starting backend Docker dependencies..."
+            cd server
+            sudo docker compose -f dev-docker-compose.yml up -d
+
+            echo "🐍 Setting up Python virtual environment..."
+            python3 -m venv .venv
+            source .venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements-dev.txt
+
+            echo "🗃 Running database migrations..."
+            python3 migration.py upgrade
+
+            echo "⚙️ Restarting backend using PM2..."
+            pm2 delete my-backend || true
+            pm2 start bash --name my-backend -- -c ". .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+            echo "🎨 Starting frontend using PM2..."
+            cd ../client
+            pm2 delete frontend || true
+            pm2 start "npm run dev" --name frontend
+
+            echo "✅ Deployment complete!"
+          EOF
+
+      - name: 🌐 (Optional) Health check
+        run: |
+          echo "Checking if site is reachable..."
+          curl -I --silent --fail https://yourdomain.com || echo "⚠️ Site did not respond over HTTPS yet."
