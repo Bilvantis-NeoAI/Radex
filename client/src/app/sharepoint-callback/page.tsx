@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { Cloud, AlertCircle, CheckCircle } from 'lucide-react';
 
+let hasRun = false;
+
 export default function SharePointCallback() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -12,7 +14,13 @@ export default function SharePointCallback() {
   const [message, setMessage] = useState('Connecting to Microsoft 365...');
 
   useEffect(() => {
-    const handleCallback = async () => {
+      if (hasRun) {
+        console.log("Already ran once, skipping...");
+        return;
+      }
+      hasRun = true;
+      
+      const handleCallback = async () => {
       const code = searchParams.get('code');
       const state = searchParams.get('state');
       const error = searchParams.get('error');

@@ -80,8 +80,7 @@ async def import_from_sharepoint(
         raise NotFoundException("Target folder not found")
 
     permission_service = PermissionService(db)
-    if not permission_service.check_folder_access(current_user.id, folder.id, "write"):
-        raise PermissionDeniedException("You don't have write access to this folder")
+    permission_service.check_folder_access(current_user.id, folder.id, "write")
 
     # Initialize services
     graph_service = MicrosoftGraphService(db)
