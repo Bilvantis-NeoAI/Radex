@@ -29,6 +29,7 @@ from app.schemas.sharepoint import (
 from app.services.microsoft_graph_service import MicrosoftGraphService
 from app.services.document_service import DocumentService
 from app.services.permission_service import PermissionService
+from app.services.embedding_service import EmbeddingService
 from app.core.exceptions import BadRequestException, NotFoundException, PermissionDeniedException
 from app.config import settings
 
@@ -85,7 +86,7 @@ async def import_from_sharepoint(
     # Initialize services
     graph_service = MicrosoftGraphService(db)
     document_service = DocumentService(db)
-
+    embedding_service = EmbeddingService(db)
     # Track results
     results: List[SyncedItemInfo] = []
     succeeded = 0
@@ -103,6 +104,7 @@ async def import_from_sharepoint(
                 current_user=current_user,
                 graph_service=graph_service,
                 document_service=document_service,
+                embedding_service=embedding_service,
             )
 
             results.append(result)
@@ -144,6 +146,7 @@ async def _sync_single_item(
     current_user: User,
     graph_service: MicrosoftGraphService,
     document_service: DocumentService,
+    embedding_service: EmbeddingService,
 ) -> SyncedItemInfo:
     """
     Sync a single file from SharePoint/OneDrive.
@@ -240,10 +243,23 @@ async def _sync_single_item(
     db.add(provider_ref)
     db.commit()
 
-    return SyncedItemInfo(
-        sharepoint_item_id=item.item_id,
-        document_id=document.id,
-        filename=filename,
-        status="success",
-        message="File synced successfully",
-    )
+    try:
+        await embedding_service.process_document_embeddings(document.id) 
+        return SyncedItemInfo(
+            sharepoint_item_id=item.item_id,
+            document_id=document.id,
+            filename=filename,
+            status="success",
+            message="File synced successfully",
+        )
+    
+    except Exception as e:
+        # Log the error but don't fail the upload
+        print(f"Failed to process embeddings for document {document.id}: {e}")
+        return SyncedItemInfo(
+            sharepoint_item_id=item.item_id,
+            document_id=document.id,
+            filename=filename,
+            status="failed",
+            message="File did not get synced",
+        )

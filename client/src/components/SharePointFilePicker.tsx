@@ -48,7 +48,7 @@ export function SharePointFilePicker({
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [items, setItems] = useState<DriveItem[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
-    { id: 'root', name: 'My OneDrive' },
+    { id: 'root', name: 'My OneDrive', driveId: '' },
   ]);
 
   // SharePoint state
@@ -103,15 +103,17 @@ export function SharePointFilePicker({
       setLoading(true);
       setError(null);
 
+      const currentDriveId = selectedDrive ? selectedDrive.id : driveInfo.id;
+
       const response = await apiClient.getDriveChildren(
         connectionId,
-        driveInfo.id,
+        currentDriveId,
         item.id
       );
       setItems(response.items);
 
       // Update breadcrumbs
-      setBreadcrumbs([...breadcrumbs, { id: item.id, name: item.name }]);
+      setBreadcrumbs([...breadcrumbs, { id: item.id, name: item.name, driveId: currentDriveId }]);
     } catch (err: unknown) {
       const errorMessage =
         err && typeof err === 'object' && 'response' in err &&
@@ -134,9 +136,11 @@ export function SharePointFilePicker({
       setLoading(true);
       setError(null);
 
+      const currentDriveId = selectedDrive ? selectedDrive.id : driveInfo.id;
+
       const response = await apiClient.getDriveChildren(
         connectionId,
-        driveInfo.id,
+        targetBreadcrumb.driveId || currentDriveId, // Use driveId from breadcrumb if available, else current driveInfo.id
         targetBreadcrumb.id
       );
       setItems(response.items);
@@ -211,7 +215,7 @@ export function SharePointFilePicker({
 
       const response = await apiClient.getDriveChildren(connectionId, drive.id, 'root');
       setItems(response.items);
-      setBreadcrumbs([{ id: 'root', name: drive.name }]);
+      setBreadcrumbs([{ id: "root", name: drive.name, driveId: drive.id }]);
     } catch (err: unknown) {
       const errorMessage =
         err && typeof err === 'object' && 'response' in err &&

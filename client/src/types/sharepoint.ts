@@ -135,4 +135,5 @@ export interface SyncImportResponse {
 export interface BreadcrumbItem {
   id: string;
   name: string;
+  driveId?: string; // Add driveId to breadcrumb item
 }
