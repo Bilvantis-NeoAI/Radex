@@ -254,8 +254,6 @@ async def _sync_single_item(
         )
     
     except Exception as e:
-        # Log the error but don't fail the upload
-        print(f"Failed to process embeddings for document {document.id}: {e}")
         return SyncedItemInfo(
             sharepoint_item_id=item.item_id,
             document_id=document.id,
