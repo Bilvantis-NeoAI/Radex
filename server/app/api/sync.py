@@ -244,7 +244,7 @@ async def _sync_single_item(
     db.commit()
 
     try:
-        await embedding_service.process_document_embeddings(document.id) 
+        await embedding_service.process_document_embeddings(document.id)
         return SyncedItemInfo(
             sharepoint_item_id=item.item_id,
             document_id=document.id,
