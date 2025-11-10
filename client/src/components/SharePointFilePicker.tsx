@@ -215,7 +215,7 @@ export function SharePointFilePicker({
 
       const response = await apiClient.getDriveChildren(connectionId, drive.id, 'root');
       setItems(response.items);
-      setBreadcrumbs([{ id: "root", name: drive.name, driveId: drive.id }]);
+      setBreadcrumbs([{ id: 'root', name: drive.name, driveId: drive.id }]);
     } catch (err: unknown) {
       const errorMessage =
         err && typeof err === 'object' && 'response' in err &&
