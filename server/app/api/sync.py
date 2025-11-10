@@ -261,5 +261,5 @@ async def _sync_single_item(
             document_id=document.id,
             filename=filename,
             status="failed",
-            message="File did not get synced",
+            message="File synced successfully but embedding generation failed",
         )
