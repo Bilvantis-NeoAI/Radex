@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { Cloud, AlertCircle, CheckCircle } from 'lucide-react';
@@ -10,8 +10,15 @@ export default function SharePointCallback() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Connecting to Microsoft 365...');
+  const hasRun = useRef(false);
 
   useEffect(() => {
+      console.log("SharePointCallback useEffect triggered.");
+      if (hasRun.current) {
+        console.log("Callback logic already ran for this instance, skipping...");
+        return;
+      }      
+
     const handleCallback = async () => {
       const code = searchParams.get('code');
       const state = searchParams.get('state');
@@ -37,6 +44,10 @@ export default function SharePointCallback() {
         }, 3000);
         return;
       }
+
+      // Mark as run only if code and state are present, indicating a valid attempt
+      hasRun.current = true;
+      console.log("Attempting to complete SharePoint authentication...");
 
       try {
         // Exchange code for connection
