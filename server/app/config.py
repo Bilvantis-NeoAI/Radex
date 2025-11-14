@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     
     # OpenAI
     openai_api_key: str
+    openai_chat_model: str = "gpt-3.5-turbo"  # Model for answer generation
+    openai_reformulation_model: str = "gpt-3.5-turbo"  # Model for query reformulation
 
     # Firebase (optional - for Firebase authentication)
     firebase_admin_sdk_json: Optional[str] = None  # JSON string of Firebase service account credentials
@@ -42,6 +44,15 @@ class Settings(BaseSettings):
     okta_redirect_uri: Optional[str] = None
     okta_api_token: Optional[str] = None
     okta_api_audience: Optional[str] = None
+
+    # SharePoint/OneDrive Provider
+    enable_sharepoint_provider: bool = False  # ENV-based feature flag
+    sp_client_id: Optional[str] = None  # Microsoft App Registration Client ID
+    sp_client_secret: Optional[str] = None  # Microsoft App Registration Client Secret
+    sp_redirect_uri: Optional[str] = None  # OAuth callback URL
+
+    # Token Encryption (for provider OAuth tokens)
+    encryption_key: Optional[str] = None  # Fernet encryption key (base64)
 
     # App
     app_name: str = "RAG RBAC System"
