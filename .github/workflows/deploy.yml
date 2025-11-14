@@ -71,7 +71,11 @@ jobs:
             alembic upgrade head
             
             echo '🟢 Step 5: Enabling SharePoint provider...'
-            python3 -c "from app.database import engine; from sqlalchemy import text; conn=engine.connect(); conn.execute(text(\"UPDATE provider_configs SET is_enabled = true WHERE provider = 'sharepoint'\")); conn.commit(); print('✓ SharePoint provider enabled in database')"
+            python3 -c "from app.database import engine; from sqlalchemy import text; \
+            with engine.connect() as conn: \
+                conn.execute(text(\"UPDATE provider_configs SET is_enabled = true WHERE provider = 'sharepoint'\")); \
+                conn.commit(); \
+            print('✓ SharePoint provider enabled in database')"
             
             echo '🚀 Step 6: Starting backend...'
             pm2 stop my-backend || true
