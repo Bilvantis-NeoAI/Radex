@@ -44,7 +44,7 @@ jobs:
             cd /root/Radex
             
             echo '📥 Pulling latest code...'
-            git pull origin main
+            git pull origin feature/CiCd-Pipeline
             
             cd server
             
