@@ -39,7 +39,6 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
             echo "🚀 Navigating to project directory..."
-            sudo bash -c '
 cd /root/Radex
 
 echo "📥 Pulling latest code..."
@@ -97,7 +96,7 @@ pm2 start "npm run dev" --name frontend
 pm2 save
 
 echo "🎉 Deployment complete!"
-'
+
           EOF
 
       - name: Health check
