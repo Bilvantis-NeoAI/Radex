@@ -40,64 +40,66 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
             echo "🚀 Navigating to project directory..."
             sudo bash -c '
-            cd /root/Radex
+cd /root/Radex
 
-            echo "📥 Pulling latest code..."
-            git pull origin main
+echo "📥 Pulling latest code..."
+git pull origin main
 
-            cd server
+cd server
 
-            echo "🐍 Step 1: Creating Python venv & installing deps..."
-            python3 -m venv .venv
-            source .venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements-dev.txt
+echo "🐍 Step 1: Creating Python venv & installing deps..."
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements-dev.txt
 
-            echo "🐳 Step 2: Starting Docker dependencies..."
-            sudo docker compose -f dev-docker-compose.yml up -d
+echo "🐳 Step 2: Starting Docker dependencies..."
+sudo docker compose -f dev-docker-compose.yml up -d
 
-            echo "🔑 Step 3: Generating new ENCRYPTION_KEY..."
-            KEY=$(python3 <<PYEOF
-            from cryptography.fernet import Fernet
-            print(Fernet.generate_key().decode())
-            PYEOF
-            )
+echo "🔑 Step 3: Generating new ENCRYPTION_KEY..."
+KEY=$(python3 - << 'PYEOF'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PYEOF
+)
 
-            echo "🔄 Updating .env with new ENCRYPTION_KEY..."
-            grep -q "^ENCRYPTION_KEY=" .env && \
-            sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY='$KEY'|" .env || \
-            echo "ENCRYPTION_KEY='$KEY'" >> .env
+echo "🔄 Updating .env with new ENCRYPTION_KEY..."
+if grep -q "^ENCRYPTION_KEY=" .env; then
+    sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY='$KEY'|" .env
+else
+    echo "ENCRYPTION_KEY='$KEY'" >> .env
+fi
 
-            echo "✔ Updated .env with ENCRYPTION_KEY='$KEY'"
+echo "✔ Updated .env with ENCRYPTION_KEY='$KEY'"
 
-            echo "🔧 Step 4: Running Alembic migrations..."
-            alembic upgrade head
+echo "🔧 Step 4: Running Alembic migrations..."
+alembic upgrade head
 
-            echo "🟢 Step 5: Enabling SharePoint provider..."
-            python3 <<PYEOF
-            from app.database import engine
-            from sqlalchemy import text
-            with engine.connect() as conn:
-            conn.execute(text("UPDATE provider_configs SET is_enabled = true WHERE provider = 'sharepoint'"))
-            conn.commit()
-            print("✓ SharePoint provider enabled in database")
-            PYEOF
+echo "🟢 Step 5: Enabling SharePoint provider..."
+python3 - << 'PYEOF'
+from app.database import engine
+from sqlalchemy import text
+with engine.connect() as conn:
+    conn.execute(text("UPDATE provider_configs SET is_enabled = true WHERE provider = 'sharepoint'"))
+    conn.commit()
+    print("✓ SharePoint provider enabled in database")
+PYEOF
 
-            echo "🚀 Step 6: Starting backend..."
-            pm2 stop my-backend || true
-            pm2 delete my-backend || true
-            pm2 start bash --name my-backend -- -c '. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000'
+echo "🚀 Step 6: Starting backend..."
+pm2 stop my-backend || true
+pm2 delete my-backend || true
+pm2 start bash --name my-backend -- -c '. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000'
 
-            echo "🌐 Step 7: Starting frontend..."
-            cd ../client
-            npm install
-            pm2 stop frontend || true
-            pm2 delete frontend || true
-            pm2 start "npm run dev" --name frontend
-            pm2 save
+echo "🌐 Step 7: Starting frontend..."
+cd ../client
+npm install
+pm2 stop frontend || true
+pm2 delete frontend || true
+pm2 start "npm run dev" --name frontend
+pm2 save
 
-            echo "🎉 Deployment complete!"
-            '
+echo "🎉 Deployment complete!"
+'
           EOF
 
       - name: Health check
