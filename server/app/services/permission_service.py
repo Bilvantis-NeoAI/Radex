@@ -44,7 +44,7 @@ class PermissionService:
                 return True
             if permission_type == "delete" and permission.can_delete:
                 return True
-        
+
         # Check parent folder permissions (inheritance)
         if folder.parent_id:
             return self.check_folder_permission(user_id, folder.parent_id, permission_type)
