@@ -1,0 +1,96 @@
+name: Radex BillGo Automation Deployment
+
+on:
+  push:
+    branches:
+      - feature/CiCd-Pipeline
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache npm packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+
+      - name: Deploy to VM
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            echo "🚀 Navigating to project directory..."
+
+            sudo bash -c "
+            cd /root/Radex
+            
+            echo '📥 Pulling latest code...'
+            git pull origin feature/CiCd-Pipeline
+            
+            cd server
+            
+            echo '🐍 Step 1: Creating Python venv & installing deps...'
+            python3 -m venv .venv
+            source .venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements-dev.txt
+            
+            echo '🐳 Step 2: Starting Docker dependencies...'
+            docker compose -f dev-docker-compose.yml up -d
+            
+            echo '🔑 Step 3: Generating new ENCRYPTION_KEY...'
+            KEY=\$(python3 -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\")
+            
+            echo '🔄 Updating .env with new ENCRYPTION_KEY...'
+            if grep -q '^ENCRYPTION_KEY=' .env; then
+                sed -i \"s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY='\$KEY'|\" .env
+            else
+                echo \"ENCRYPTION_KEY='\$KEY'\" >> .env
+            fi
+            
+            echo '🔧 Step 4: Running Alembic migrations...'
+            alembic upgrade head
+            
+            echo '🟢 Step 5: Enabling SharePoint provider...'
+            python3 enable_sharepoint.py
+            
+            echo '🚀 Step 6: Starting backend...'
+            pm2 stop my-backend || true
+            pm2 delete my-backend || true
+            pm2 start bash --name my-backend -- -c '. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000'
+            
+            echo '🌐 Step 7: Starting frontend...'
+            cd ../client
+            npm install
+            pm2 stop frontend || true
+            pm2 delete frontend || true
+            pm2 start \"npm run dev\" --name frontend
+            pm2 save
+            
+            echo '🎉 Deployment complete!'
+          "
+          EOF
+
+      - name: Health check
+        run: |
+          echo "Checking if site is reachable..."
+          curl -I --silent --fail https://radexbillgo.bilvantis.com || echo "⚠️ Site did not respond over HTTPS yet."
