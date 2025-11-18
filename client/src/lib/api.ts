@@ -176,6 +176,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getAllDocuments() {
+    const response = await this.client.get(`/api/v1/documents/all`);
+    return response.data;
+  }
+
   async downloadDocument(id: string) {
     const response = await this.client.get(`/api/v1/documents/${id}/download`, {
       responseType: 'blob'

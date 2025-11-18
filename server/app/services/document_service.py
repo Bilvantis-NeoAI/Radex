@@ -129,6 +129,10 @@ class DocumentService:
     def get_documents_in_folder(self, folder_id: UUID) -> List[Document]:
         """Get all documents in a folder"""
         return self.db.query(Document).filter(Document.folder_id == folder_id).all()
+
+    def get_all_documents(self, user_id: UUID) -> List[Document]:
+        """Get all documents accessible by a user"""
+        return self.db.query(Document).filter(Document.uploaded_by == user_id).all()
     
     def download_document(self, document_id: UUID) -> tuple[BinaryIO, str, str]:
         """Download document from MinIO"""
