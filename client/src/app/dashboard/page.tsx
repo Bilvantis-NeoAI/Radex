@@ -33,7 +33,6 @@ export default function DashboardPage() {
       setIsLoading(true);
       const folders = await apiClient.getFolders();
       const documents = await apiClient.getAllDocuments();
-      console.log('Documents:', documents);
       
       setStats({
         totalFolders: folders.length,
