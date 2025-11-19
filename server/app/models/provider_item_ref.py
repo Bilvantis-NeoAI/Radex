@@ -55,7 +55,7 @@ class ProviderItemRef(Base):
     # Indexes
     __table_args__ = (
         # Unique constraint: prevent duplicate imports
-        Index('uix_provider_drive_item', 'provider', 'drive_id', 'item_id', unique=True),
+        Index('uix_provider_connection_drive_item', 'provider', 'connection_id', 'drive_id', 'item_id', unique=True),
         Index('ix_provider_item_refs_connection_id', 'connection_id'),
         Index('ix_provider_item_refs_document_id', 'document_id'),
     )
