@@ -9,6 +9,7 @@ from minio.error import S3Error
 from fastapi import UploadFile
 from app.models import Document, Folder
 from app.config import settings
+from app.services.permission_service import PermissionService
 from app.core.exceptions import NotFoundException, BadRequestException
 from app.utils import (
     get_file_type,
@@ -20,6 +21,7 @@ from app.utils import (
 class DocumentService:
     def __init__(self, db: Session):
         self.db = db
+        self.permission_service = PermissionService(db)
         self.minio_client = Minio(
             settings.minio_endpoint,
             access_key=settings.minio_access_key,
@@ -131,8 +133,18 @@ class DocumentService:
         return self.db.query(Document).filter(Document.folder_id == folder_id).all()
 
     def get_all_documents(self, user_id: UUID) -> List[Document]:
-        """Get all documents accessible by a user"""
-        return self.db.query(Document).filter(Document.uploaded_by == user_id).all()
+        """Get all documents accessible by a user, including those in shared folders."""
+        
+        # Get all folders the user has read access to (owned or shared)
+        accessible_folders = self.permission_service.get_user_accessible_folders(user_id)
+        accessible_folder_ids = [folder.id for folder in accessible_folders]
+
+        # Query for documents that reside in folders the user has access to.
+        documents = self.db.query(Document).filter(
+            Document.folder_id.in_(accessible_folder_ids)
+        ).all()
+        
+        return documents
     
     def download_document(self, document_id: UUID) -> tuple[BinaryIO, str, str]:
         """Download document from MinIO"""

@@ -53,7 +53,7 @@ async def upload_document(
         message="Document uploaded successfully"
     )
 
-@router.get("/documents/all")
+@router.get("/documents/all", response_model=List[Document])
 def list_all_documents(
     current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -63,27 +63,8 @@ def list_all_documents(
         
     # Get all documents for the user
     documents = document_service.get_all_documents(current_user.id)
-    
-    # Add embedding status to each document
-    All_documents = []
-    for doc in documents:
-        doc_dict = {
-            "id": doc.id,
-            "filename": doc.filename,
-            "file_type": doc.file_type,
-            "folder_id": doc.folder_id,
-            "file_size": doc.file_size,
-            "file_path": doc.file_path,
-            "uploaded_by": doc.uploaded_by,
-            "created_at": doc.created_at,
-            "updated_at": doc.updated_at,
-        }
-        
-        All_documents.append(Document(**doc_dict))
 
-        print(All_documents)
-    
-    return All_documents
+    return documents
 
 @router.get("/documents/{document_id}", response_model=Document)
 def get_document_metadata(
