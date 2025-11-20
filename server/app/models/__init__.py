@@ -7,6 +7,7 @@ from .embedding import Embedding
 from .provider_connection import ProviderConnection, ProviderType
 from .provider_item_ref import ProviderItemRef
 from .provider_config import ProviderConfig
+from .mcp import McpChatSession, McpQueryHistory, McpFileMetadata, McpQueryAnalytics
 
 __all__ = [
     "Base",
@@ -19,4 +20,7 @@ __all__ = [
     "ProviderType",
     "ProviderItemRef",
     "ProviderConfig",
-]
+    "McpChatSession",
+    "McpQueryHistory",
+    "McpFileMetadata",
+    "McpQueryAnalytics",

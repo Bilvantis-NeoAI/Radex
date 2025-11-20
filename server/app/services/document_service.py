@@ -16,6 +16,9 @@ from app.utils import (
     extract_text_from_file,
     validate_file_size
 )
+# Import MCP components for CSV/Excel handling
+from app.mcp.data_processor import MCPDataProcessor
+from app.config import settings
 
 class DocumentService:
     def __init__(self, db: Session):
@@ -111,11 +114,36 @@ class DocumentService:
                     content_type=file.content_type
                 )
             
+            # For CSV/Excel files, also upload to MCP
+            mcp_file_id = None
+            if file_type.lower() in ['csv', 'xlsx', 'xls']:
+                try:
+                    # Import here to avoid circular imports
+                    from app.core.security import decode_token
+                    # Get user info from token (but since this is service, we have the user id)
+                    mcp_processor = MCPDataProcessor(settings)
+                    mcp_result = await mcp_processor.upload_file(
+                        file_data=file_content,
+                        filename=file.filename,
+                        folder_id=str(folder_id),
+                        user_id=str(uploaded_by)
+                    )
+                    mcp_file_id = mcp_result['file_id']
+                except Exception as e:
+                    # Log error but don't fail document upload
+                    print(f"Warning: Failed to upload to MCP: {str(e)}")
+
+            # Update document metadata with MCP info
+            if mcp_file_id:
+                doc_metadata = document.doc_metadata or {}
+                doc_metadata['mcp_file_id'] = mcp_file_id
+                document.doc_metadata = doc_metadata
+
             # Update document with file path
             document.file_path = object_name
             self.db.commit()
             self.db.refresh(document)
-            
+
             return document
             
         except S3Error as e:

@@ -9,6 +9,9 @@ from app.core.exceptions import BadRequestException, PermissionDeniedException
 from app.services.permission_service import PermissionService
 from app.services.embedding_service import EmbeddingService
 from app.schemas import RAGQuery, RAGResponse, RAGChunk, ChatRequest, ChatResponse, ChatMessage
+# Import MCP components for CSV/Excel integration
+from app.mcp.tools import MCPTools
+from app.mcp.api import QueryRequest
 
 class RAGService:
     def __init__(self, db: Session):
@@ -362,7 +365,7 @@ Reformulated standalone query:"""
                 )
 
             # Generate answer using conversation context + retrieved documents
-            answer = await self._generate_chat_answer(recent_messages, similar_chunks)
+            answer = await self._generate_chat_answer(user_id, recent_messages, similar_chunks)
 
             # Format sources
             sources = []
@@ -396,15 +399,29 @@ Reformulated standalone query:"""
 
     async def _generate_chat_answer(
         self,
+        user_id: UUID,
         messages: List[ChatMessage],
         context_chunks: List[Dict[str, Any]]
     ) -> str:
         """
         Generate chat answer using conversation history and retrieved context.
         Uses the last N messages to maintain conversation continuity.
+        Includes MCP analysis for CSV/Excel files.
         """
+        # Extract the latest user query for MCP analysis
+        latest_user_message = None
+        for msg in reversed(messages):
+            if msg.role == "user":
+                latest_user_message = msg.content
+                break
+
+        if not latest_user_message:
+            raise BadRequestException("No user message found for analysis")
+
         # Prepare context from chunks
         context_texts = []
+        excel_csv_analysis = []  # Store MCP results for structured data files
+
         for chunk in context_chunks:
             context_texts.append(
                 f"Document: {chunk['document_name']}\n"
@@ -412,7 +429,30 @@ Reformulated standalone query:"""
                 f"Relevance: {chunk['similarity_score']:.2f}\n"
             )
 
+            # Check if this is a CSV/Excel document with MCP support
+            document_name = chunk.get('document_name', '')
+            if document_name.lower().endswith(('.csv', '.xlsx', '.xls')):
+                metadata = chunk.get('metadata', {})
+                mcp_file_id = metadata.get('mcp_file_id')
+                if mcp_file_id:
+                    # Perform MCP analysis for this file
+                    try:
+                        mcp_tools = MCPTools(self.db, user_id)
+                        mcp_result = mcp_tools.generate_ai_response(
+                            question=latest_user_message,
+                            available_files=[{'file_id': mcp_file_id}],
+                            session_id=f"rag_{mcp_file_id}_{time.time()}",
+                            chat_history=[]
+                        )
+                        if mcp_result.get('response'):
+                            excel_csv_analysis.append(f"Analysis from {document_name}:\n{mcp_result['response']}")
+                    except Exception as e:
+                        print(f"MCP analysis failed for {document_name}: {str(e)}")
+
         document_context = "\n---\n".join(context_texts)
+
+        if excel_csv_analysis:
+            document_context += "\n\n--- MCP Data Analysis ---\n" + "\n".join(excel_csv_analysis)
 
         # Create system prompt
         system_prompt = """You are a helpful AI assistant that answers questions based on provided documents and conversation history.
