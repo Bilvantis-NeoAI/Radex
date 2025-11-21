@@ -185,9 +185,27 @@ export default function FolderDetailPage() {
     setIsUploading(true);
 
     try {
-      for (const file of acceptedFiles) {
+      // Separate CSV/Excel files from other files
+      const csvExcelFiles = acceptedFiles.filter(file => {
+        const ext = file.name.toLowerCase().split('.').pop() || '';
+        return ['csv', 'xlsx', 'xls'].includes(ext);
+      });
+
+      const otherFiles = acceptedFiles.filter(file => {
+        const ext = file.name.toLowerCase().split('.').pop() || '';
+        return !['csv', 'xlsx', 'xls'].includes(ext);
+      });
+
+      // Upload CSV/Excel files via MCP
+      if (csvExcelFiles.length > 0) {
+        await apiClient.uploadMCPFiles(folderId, csvExcelFiles);
+      }
+
+      // Upload other files via regular document upload
+      for (const file of otherFiles) {
         await apiClient.uploadDocument(folderId, file);
       }
+
       await loadFolderData(); // Reload to show new documents
     } catch (error) {
       console.error('Failed to upload files:', error);
@@ -204,7 +222,10 @@ export default function FolderDetailPage() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
       'text/markdown': ['.md'],
-      'text/html': ['.html', '.htm']
+      'text/html': ['.html', '.htm'],
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
     }
   });
 
@@ -362,7 +383,7 @@ export default function FolderDetailPage() {
                 Drag and drop files here
               </p>
               <p className="text-sm text-gray-500">
-                Supports PDF, DOC, DOCX, TXT, MD, HTML files
+                Supports PDF, DOC, DOCX, TXT, MD, HTML, CSV, XLSX, XLS files
               </p>
             </div>
           )}

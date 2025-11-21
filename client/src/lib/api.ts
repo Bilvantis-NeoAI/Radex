@@ -372,6 +372,51 @@ class ApiClient {
     return response.data;
   }
 
+  // MCP Data Analysis endpoints
+  async uploadMCPFiles(folderId: string, files: File[], sessionId?: string) {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    formData.append('folder_id', folderId);
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+
+    const response = await this.client.post('/api/v1/mcp/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  }
+
+  async queryMCP(question: string, sessionId: string, folderId?: string) {
+    const response = await this.client.post('/api/v1/mcp/query', {
+      question,
+      session_id: sessionId,
+      folder_id: folderId
+    });
+    return response.data;
+  }
+
+  async listMCPFiles(folderId?: string) {
+    const params: Record<string, string> = {};
+    if (folderId) params.folder_id = folderId;
+
+    const response = await this.client.get('/api/v1/mcp/files', { params });
+    return response.data;
+  }
+
+  async getMCPChatHistory(sessionId: string, limit?: number) {
+    const params: Record<string, string | number> = {};
+    if (limit) params.limit = limit;
+
+    const response = await this.client.get(`/api/v1/mcp/chat/${sessionId}`, { params });
+    return response.data;
+  }
+
+  async clearMCPChatHistory(sessionId: string) {
+    const response = await this.client.delete(`/api/v1/mcp/chat/${sessionId}`);
+    return response.data;
+  }
+
   // Configuration endpoints
   async getProvidersConfig() {
     const response = await this.client.get('/api/v1/config/providers');
