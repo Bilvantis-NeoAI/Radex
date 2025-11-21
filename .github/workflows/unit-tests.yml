@@ -49,7 +49,7 @@ jobs:
         MINIO_ACCESS_KEY: minioadmin
         MINIO_SECRET_KEY: minioadmin
         MINIO_BUCKET: test-documents
-        JWT_SECRET_KEY: test-secret-key-for-ci
+        JWT_SECRET_KEY: a-very-strong-and-long-secret-key-for-testing-purposes-at-least-32-chars-should-be-okay
         JWT_ALGORITHM: HS256
         JWT_EXPIRATION_MINUTES: 30
         OPENAI_API_KEY: test-openai-key
