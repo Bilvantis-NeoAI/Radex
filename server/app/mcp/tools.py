@@ -12,12 +12,10 @@ from datetime import datetime
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
-from .data_processor import MCPDataProcessor
-from .chat_manager import MCPChatManager
-from ..config import settings
-from ..core.exceptions import BadRequestException, PermissionDeniedException
-from ..core.security import get_current_user
-
+from app.mcp.data_processor import MCPDataProcessor
+from app.mcp.chat_manager import MCPChatManager
+from app.config import settings
+from app.core.exceptions import BadRequestException, PermissionDeniedException
 
 class MCPTools:
     """MCP data analysis tools integrated with RADEX"""
@@ -268,3 +266,4 @@ Please provide a polite, helpful response explaining that the requested informat
                 "message": "Chat history cleared" if success else "Failed to clear history"
             }
         except Exception as e:
+                    raise BadRequestException(f"Error clearing chat history: {str(e)}")

@@ -11,16 +11,15 @@ from typing import List, Optional
 from pydantic import BaseModel
 import uuid
 
-from .data_processor import MCPDataProcessor
-from .chat_manager import MCPChatManager
-from .tools import MCPTools
-from ..database import get_db
-from ..config import settings
-from ..core.security import get_current_user
-from ..core.exceptions import BadRequestException
+from app.mcp.data_processor import MCPDataProcessor
+from app.mcp.chat_manager import MCPChatManager
+from app.mcp.tools import MCPTools
+from app.database import get_db
+from app.config import settings
+from app.core.dependencies import get_current_active_user
+from app.core.exceptions import BadRequestException
 
 router = APIRouter()
-
 
 class QueryRequest(BaseModel):
     question: str
@@ -39,7 +38,7 @@ async def upload_files(
     files: List[UploadFile] = File(...),
     folder_id: str = Form(...),
     session_id: Optional[str] = Form(None),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Upload multiple CSV/Excel files for MCP analysis"""
@@ -88,7 +87,7 @@ async def upload_files(
 @router.get("/files")
 async def list_files(
     folder_id: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """List uploaded files for the current user"""
@@ -104,7 +103,7 @@ async def list_files(
 @router.post("/query")
 async def query_data(
     request: QueryRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Process natural language data queries"""
@@ -141,7 +140,7 @@ async def query_data(
 async def get_chat_history(
     session_id: str,
     limit: int = 50,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get chat history for a session"""
@@ -157,7 +156,7 @@ async def get_chat_history(
 @router.delete("/chat/{session_id}")
 async def clear_chat_history(
     session_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Clear chat history for a session"""
@@ -173,7 +172,7 @@ async def clear_chat_history(
 @router.get("/describe/{file_id}")
 async def describe_file(
     file_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get detailed information about a file"""
@@ -189,7 +188,7 @@ async def describe_file(
 @router.get("/columns/{file_id}")
 async def get_columns(
     file_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get column names for a file"""
