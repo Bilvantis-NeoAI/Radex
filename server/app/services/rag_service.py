@@ -365,7 +365,7 @@ Reformulated standalone query:"""
                 )
 
             # Generate answer using conversation context + retrieved documents
-            answer = await self._generate_chat_answer(user_id, recent_messages, similar_chunks)
+            answer = await self._generate_chat_answer(user_id, recent_messages, similar_chunks, accessible_folders)
 
             # Format sources
             sources = []
@@ -401,7 +401,8 @@ Reformulated standalone query:"""
         self,
         user_id: UUID,
         messages: List[ChatMessage],
-        context_chunks: List[Dict[str, Any]]
+        context_chunks: List[Dict[str, Any]],
+        accessible_folders: Optional[List[UUID]] = None
     ) -> str:
         """
         Generate chat answer using conversation history and retrieved context.
@@ -429,25 +430,34 @@ Reformulated standalone query:"""
                 f"Relevance: {chunk['similarity_score']:.2f}\n"
             )
 
-            # Check if this is a CSV/Excel document with MCP support
-            document_name = chunk.get('document_name', '')
-            if document_name.lower().endswith(('.csv', '.xlsx', '.xls')):
-                metadata = chunk.get('metadata', {})
-                mcp_file_id = metadata.get('mcp_file_id')
-                if mcp_file_id:
-                    # Perform MCP analysis for this file
-                    try:
-                        mcp_tools = MCPTools(self.db, user_id)
-                        mcp_result = mcp_tools.generate_ai_response(
-                            question=latest_user_message,
-                            available_files=[{'file_id': mcp_file_id}],
-                            session_id=f"rag_{mcp_file_id}_{time.time()}",
-                            chat_history=[]
-                        )
-                        if mcp_result.get('response'):
-                            excel_csv_analysis.append(f"Analysis from {document_name}:\n{mcp_result['response']}")
-                    except Exception as e:
-                        print(f"MCP analysis failed for {document_name}: {str(e)}")
+        # Check for MCP CSV/Excel files across accessible folders
+        if accessible_folders:
+            try:
+                from app.mcp.tools import MCPTools
+                mcp_tools = MCPTools(self.db, str(user_id))
+
+                # Get all MCP files for this user in accessible folders
+                all_mcp_files = []
+                for folder_id in accessible_folders:
+                    folder_files = mcp_tools.data_processor.list_user_files(str(user_id), str(folder_id))
+                    all_mcp_files.extend(folder_files)
+
+                if all_mcp_files:
+                    # Perform MCP analysis for all CSV/Excel files
+                    for mcp_file in all_mcp_files:
+                        try:
+                            mcp_result = mcp_tools.generate_ai_response(
+                                question=latest_user_message,
+                                available_files=[mcp_file],
+                                session_id=f"rag_{mcp_file['file_id']}_{time.time()}",
+                                chat_history=[]
+                            )
+                            if mcp_result.get('response'):
+                                excel_csv_analysis.append(f"Analysis from {mcp_file['filename']}:\n{mcp_result['response']}")
+                        except Exception as e:
+                            print(f"MCP analysis failed for {mcp_file['filename']}: {str(e)}")
+            except Exception as e:
+                print(f"Failed to perform MCP analysis: {str(e)}")
 
         document_context = "\n---\n".join(context_texts)
 
