@@ -381,8 +381,10 @@ class ApiClient {
       formData.append('session_id', sessionId);
     }
 
+    // Use a longer timeout for file processing (60 seconds)
     const response = await this.client.post('/api/v1/mcp/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000
     });
     return response.data;
   }

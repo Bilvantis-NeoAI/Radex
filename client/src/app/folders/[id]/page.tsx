@@ -185,24 +185,8 @@ export default function FolderDetailPage() {
     setIsUploading(true);
 
     try {
-      // Separate CSV/Excel files from other files
-      const csvExcelFiles = acceptedFiles.filter(file => {
-        const ext = file.name.toLowerCase().split('.').pop() || '';
-        return ['csv', 'xlsx', 'xls'].includes(ext);
-      });
-
-      const otherFiles = acceptedFiles.filter(file => {
-        const ext = file.name.toLowerCase().split('.').pop() || '';
-        return !['csv', 'xlsx', 'xls'].includes(ext);
-      });
-
-      // Upload CSV/Excel files via MCP
-      if (csvExcelFiles.length > 0) {
-        await apiClient.uploadMCPFiles(folderId, csvExcelFiles);
-      }
-
-      // Upload other files via regular document upload
-      for (const file of otherFiles) {
+      // Upload all files via regular document upload (including CSV/Excel)
+      for (const file of acceptedFiles) {
         await apiClient.uploadDocument(folderId, file);
       }
 
