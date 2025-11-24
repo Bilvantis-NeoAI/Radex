@@ -1,4 +1,4 @@
-"""adds connection_id to uid_provider_driver_item
+"""adds connection_id to uix_provider_connection_drive_item
 
 Revision ID: e5ab1adc9113
 Revises: a1b2c3d4e5f6
