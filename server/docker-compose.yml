@@ -3,24 +3,25 @@ version: '3.8'
 services:
   postgres:
     image: pgvector/pgvector:pg15
+    container_name: postgres_db_radex
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${db_name}
+      POSTGRES_USER: ${db_user}
+      POSTGRES_PASSWORD: ${db_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${db_user}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    container_name: redis_radex
+    command: redis-server --requirepass ${redis_password}
     ports:
       - "6379:6379"
     volumes:
@@ -28,10 +29,11 @@ services:
 
   minio:
     image: minio/minio:latest
+    container_name: minio_radex
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      minio_root_user: ${minio_access_key}
+      minio_root_password: ${minio_secret_key}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -40,19 +42,27 @@ services:
 
   app:
     build: .
+    container_name: backend_radex
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_BUCKET}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      JWT_ALGORITHM: ${JWT_ALGORITHM}
-      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      database_url: postgresql://${db_user}:${db_password}@postgres:5432/${db_name}
+      redis_url: redis://:${redis_password}@redis:6379/0
+      okta_client_id: ${okta_client_id}
+      okta_client_secret: ${okta_client_secret}
+      okta_domain: ${okta_domain}
+      okta_redirect_uri: ${okta_redirect_uri}
+      okta_api_token: ${okta_api_token}
+      okta_api_audience: ${okta_api_audience}
+      minio_endpoint: ${minio_endpoint}
+      minio_access_key: ${minio_access_key}
+      minio_secret_key: ${minio_secret_key}
+      minio_bucket: ${minio_bucket}
+      jwt_secret_key: ${jwt_secret_key}
+      jwt_algorithm: ${jwt_algorithm}
+      jwt_expiration_minutes: ${jwt_expiration_minutes}
+      openai_api_key: ${openai_api_key}
+      firebase_admin_sdk_json: ${firebase_admin_sdk_json}
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,7 +71,7 @@ services:
       minio:
         condition: service_started
     volumes:
-      - ./app:/app
+      - ./:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
