@@ -53,6 +53,19 @@ async def upload_document(
         message="Document uploaded successfully"
     )
 
+@router.get("/documents/all", response_model=List[Document])
+def list_all_documents(
+    current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all documents accessible to the user"""
+    document_service = DocumentService(db)
+        
+    # Get all documents for the user
+    documents = document_service.get_all_documents(current_user.id)
+
+    return documents
+
 @router.get("/documents/{document_id}", response_model=Document)
 def get_document_metadata(
     document_id: UUID,

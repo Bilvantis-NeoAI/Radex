@@ -32,10 +32,11 @@ export default function DashboardPage() {
     try {
       setIsLoading(true);
       const folders = await apiClient.getFolders();
+      const documents = await apiClient.getAllDocuments();
       
       setStats({
         totalFolders: folders.length,
-        totalDocuments: 0, // TODO: Implement proper document count via separate API call
+        totalDocuments: documents.length,
         recentQueries: 0, // TODO: Implement query history
         storageUsed: '0 MB', // TODO: Calculate storage usage
       });
