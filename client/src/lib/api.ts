@@ -544,7 +544,10 @@ class ApiClient {
       e_tag?: string;
     }>;
   }) {
-    const response = await this.client.post('/api/v1/sync/import', data);
+    // Use longer timeout for file imports, especially for multiple large files
+    const response = await this.client.post('/api/v1/sync/import', data, {
+      timeout: 300000  // 5 minutes for potentially large SharePoint imports
+    });
     return response.data; // { total, succeeded, skipped, failed, results: [...] }
   }
 }

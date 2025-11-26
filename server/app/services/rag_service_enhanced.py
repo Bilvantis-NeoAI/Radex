@@ -98,6 +98,78 @@ class RAGService:
             "key_terms": [],
             "aggregation_info": {}
         }
+
+    def _analyze_dataframe_question_patterns(self, question_lower: str, columns: List[str]) -> Dict[str, Any]:
+        """
+        Analyzes question patterns to identify specific dataframe operations needed.
+        Maps natural language to pandas operations for better code generation.
+        """
+        # Define column name patterns to look for
+        column_patterns = {
+            'regions': ['region', 'country/region', 'state', 'city'],
+            'measures': ['sales', 'profit', 'quantity', 'price', 'amount', 'total', 'revenue'],
+            'categories': ['category', 'product name', 'sub-category', 'department'],
+            'entities': ['customer', 'customer name', 'segment', 'market']
+        }
+
+        # Find matching columns in the dataset
+        found_columns = {
+            'group_columns': [],
+            'measure_columns': [],
+            'filter_columns': []
+        }
+
+        lower_columns = [col.lower() for col in columns]
+
+        for col_type, patterns in column_patterns.items():
+            for pattern in patterns:
+                for i, col in enumerate(lower_columns):
+                    if pattern in col or col in pattern:
+                        if col_type == 'regions':
+                            found_columns['group_columns'].append(columns[i])
+                        elif col_type == 'measures':
+                            found_columns['measure_columns'].append(columns[i])
+                        elif col_type == 'categories':
+                            found_columns['group_columns'].append(columns[i])
+                        elif col_type == 'entities':
+                            found_columns['filter_columns'].append(columns[i])
+
+        # Determine operation type based on question patterns
+        operation_analysis = {
+            'wisepattern': bool(re.search(r'\b(\w+)\s+wise\s+(\w+)', question_lower)),
+            'bypattern': bool(re.search(r'\b(\w+)\s+by\s+(\w+)', question_lower)),
+            'top_pattern': bool(re.search(r'\b(top|highest|most|max|maximum|best)\b', question_lower)),
+            'bottom_pattern': bool(re.search(r'\b(bottom|lowest|least|min|minimum|worst)\b', question_lower)),
+            'count_pattern': bool(re.search(r'\b(how many|count)\b', question_lower)),
+            'average_pattern': bool(re.search(r'\b(average|mean|avg)\b', question_lower)),
+            'sum_pattern': bool(re.search(r'\b(total|sum|amount)\b', question_lower))
+        }
+
+        # Determine primary operation
+        primary_operation = "unknown"
+        if operation_analysis['wisepattern']:
+            primary_operation = "groupby_aggregate"
+        elif operation_analysis['top_pattern'] and found_columns['measure_columns']:
+            primary_operation = "top_n_groupby"
+        elif operation_analysis['average_pattern']:
+            primary_operation = "aggregate_mean"
+        elif operation_analysis['sum_pattern']:
+            primary_operation = "aggregate_sum"
+        elif operation_analysis['count_pattern']:
+            primary_operation = "count_rows"
+        else:
+            primary_operation = "inspect_data"
+
+        return {
+            'analysis': f"'{question_lower}' -> detected {sum(operation_analysis.values())} patterns",
+            'primary_column': found_columns['measure_columns'][0] if found_columns['measure_columns'] else "unknown",
+            'group_column': found_columns['group_columns'][0] if found_columns['group_columns'] else "unknown",
+            'operation_type': primary_operation,
+            'filters': [],
+            'confidence': sum(operation_analysis.values()) / len(operation_analysis),
+            'found_columns': found_columns,
+            'detected_patterns': operation_analysis
+        }
     def __init__(self, db: Session):
         self.db = db
         self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
@@ -1124,7 +1196,7 @@ Answer:"""
         chat_history_context: str,
         available_files: List[Dict]
     ) -> Dict[str, Any]:
-        """Generate pandas code to answer the question (like POC approach) with enhanced column matching"""
+        """Generate pandas code to answer any question about any structured data file"""
         try:
             # Create context with available files and their columns
             available_columns = {}
@@ -1134,52 +1206,83 @@ Answer:"""
             # Create a comprehensive context showing exact column names
             column_examples = []
             for filename, columns in available_columns.items():
-                column_examples.append(f"File '{filename}' columns: {', '.join([f'"{col}"' for col in columns[:10]])}")
+                column_examples.append(f"File '{filename}' columns: {', '.join([f'"{col}"' for col in columns[:15]])}")
 
             files_context_json = str(available_columns)
             columns_context = "\n".join(column_examples)
 
-            context = f"""{chat_history_context}Question: {question}
+            # Enhanced question preprocessing using AI to understand the question deeply
+            enhanced_question = await self._enhance_question_understanding(question, columns_context, chat_history_context)
 
-AVAILABLE FILES AND EXACT COLUMN NAMES:
+            context = f"""{chat_history_context}
+
+QUESTION ENHANCEMENT: "{question}" → Enhanced Analysis: "{enhanced_question}"
+
+AVAILABLE DATA FILES:
 {columns_context}
 
-COLUMN NAME CONSTRAINTS:
-- You MUST use the EXACT column names shown above in quotes
-- Do NOT change case (e.g., if it's "Total_Runs", don't use "total_runs")
-- Do NOT replace spaces, underscores, or special characters
-- Copy column names exactly as shown
+INSTRUCTIONAL GUIDANCE:
+You are an expert data scientist analyzing any type of structured data (CSV, Excel, etc.).
+Your job is to understand questions deeply, select the best available data file, and generate precise pandas operations.
 
-SUPPORTED OPERATIONS:
-- Basic stats: df['column'].mean(), df['column'].sum(), df['column'].max(), df['column'].min()
-- Row operations: df.head(n).to_dict('records'), df.describe().to_dict()
-- Filtering: df[df['column'].str.contains('value')].to_dict('records')
-- Filtering + operations: df[df['column'].str.contains('value')]['other_column'].sum()
-- Count operations: len(df), df['column'].count()
-- Multiple column operations: df[['col1', 'col2']].to_dict('records')
-- String filtering: df[df['text_column'].str.contains('keyword', case=False, na=False)]
+QUESTION ANALYSIS PROCESS:
+1. Identify what the user wants (aggregate, filter, sort, analyze patterns, etc.)
+2. Map user terms to AVAILABLE column names from the files above
+3. Choose appropriate pandas operations for the data type
+4. Generate executable pandas code using EXACT column names
 
-Respond with ONLY valid JSON in this exact format:
-{{"filename": "exact_filename.csv", "pandas_code": "valid_pandas_code", "description": "brief description"}}
+GENERAL OPERATIONS BY QUESTION TYPE:
 
-Examples:
-- "average age" → {{"filename": "customers.csv", "pandas_code": "df['age'].mean()", "description": "Calculate average age"}}
-- "south region sales" → {{"filename": "Sample - Superstore-Main.xlsx", "pandas_code": "df[df['Country/Region'].str.contains('South', case=False, na=False)]['Sales'].sum()", "description": "Sum sales for South region"}}
-- "show first 5 rows" → {{"filename": "sales.csv", "pandas_code": "df.head(5).to_dict('records')", "description": "Show first 5 rows"}}
-- "total revenue" → {{"filename": "transactions.csv", "pandas_code": "df['revenue'].sum()", "description": "Calculate total revenue"}}
-- "sales in california" → {{"filename": "Sample - Superstore-Main.xlsx", "pandas_code": "df[df['State'].str.contains('California', case=False, na=False)]['Sales'].sum()", "description": "Total sales in California"}}
-- "top 5 products by sales" → {{"filename": "sales.csv", "pandas_code": "df.groupby('Product')['Sales'].sum().sort_values(ascending=False).head(5).to_dict()", "description": "Top 5 products by total sales"}}
-- "how many sales in south region" → {{"filename": "Sample - Superstore-Main.xlsx", "pandas_code": "len(df[df['Country/Region'].str.contains('South', case=False, na=False)])", "description": "Count sales records in South region"}}
-- "profit by category" → {{"filename": "Sample - Superstore-Main.xlsx", "pandas_code": "df.groupby('Category')['Profit'].sum().sort_values(ascending=False).head(10).to_dict()", "description": "Total profit by product category"}}"""
+AGGREGATION ("WISE", "BY", "GROUPED"):
+df.groupby('column_name')['numeric_column'].sum().sort_values(ascending=False).head(10).to_dict()
+
+FILTRING + AGGREGATION:
+df[df['column'].str.contains('value', case=False, na=False)]['numeric_column'].sum()
+
+RANKING ("TOP", "BOTTOM", "BEST", "WORST"):
+df.groupby('group_col')['measure_col'].sum().sort_values(ascending=False).head(N).to_dict()
+
+STATISTICS ("AVERAGE", "MEAN", "MIN", "MAX"):
+df['numeric_column'].mean() OR df.groupby('category')['numeric_col'].mean()
+
+COUNTS ("HOW MANY", "COUNT"):
+len(df) OR df['column'].count() OR df.groupby('column').size()
+
+EXAMPLES FOR ANY DATA TYPE:
+- "sales by region" → df.groupby('region_column')['sales_column'].sum().to_dict()
+- "average price by category" → df.groupby('category_column')['price_column'].mean().sort_values(ascending=False).to_dict()
+- "top 10 customers by revenue" → df.groupby('customer_column')['revenue_column'].sum().sort_values(ascending=False).head(10).to_dict()
+- "total sales in Q4" → df[df['date_column'].str.contains('Q4|12/|QTR4', case=False, na=False)]['sales_column'].sum()
+- "customer analysis" → df.groupby('customer_column').agg({{'amount_column': 'sum', 'count_column': 'count'}}).sort_values('amount_column', ascending=False).to_dict()
+
+ANALYSIS STEPS:
+1. Find the BEST file for the question based on column relevance
+2. Identify the EXACT column names to use (must match what's shown above)
+3. Select appropriate operation based on question intent
+4. Generate pandas code that works with any data structure
+
+RESPONSE FORMAT: JSON only
+{{
+  "filename": "exact_filename",
+  "pandas_code": "valid_pandas_operation_using_exact_columns",
+  "description": "clear_explanation_of_analysis"
+}}
+
+Example patterns for the enhanced question analysis:
+- "region wise sales" anywhere → df.groupby('region/state/country_column')['sales/revenue/amount_column'].sum().sort_values(ascending=False).head(10).to_dict()
+- "product performance" → df.groupby('product/item/name_column')['sales/units/revenue_column'].sum().sort_values(ascending=False).head(10).to_dict()
+- "customer insights" → df.groupby('customer/client/name_column')['purchase/revenue/amount_column'].sum().sort_values(ascending=False).head(10).to_dict()
+
+The key is FINDING the right column names and applying appropriate operations based on data types."""
 
             response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a data analysis expert. Generate pandas code using EXACT column names provided. Respond ONLY with valid JSON containing filename, pandas_code, and description."},
+                    {"role": "system", "content": "You are a senior data scientist who can analyze ANY structured data file. You deeply understand natural language questions, map terms to actual column names, and generate precise pandas operations. Respond ONLY with valid JSON using exact column names from the data."},
                     {"role": "user", "content": context}
                 ],
                 temperature=0.1,
-                max_tokens=250
+                max_tokens=300
             )
 
             ai_response = response.choices[0].message.content.strip()
@@ -1195,18 +1298,72 @@ Examples:
 
             # Validate that the filename matches an available file
             if result.get('filename') not in available_columns:
-                # Try to find the closest match
+                # Try to find the closest match or default to first file
                 available_filenames = list(available_columns.keys())
                 if available_filenames:
-                    result['filename'] = available_filenames[0]  # Use first available file
+                    result['filename'] = available_filenames[0]
                 else:
                     return {"error": "No available files found"}
 
             return result
 
         except Exception as e:
-            print(f"Error generating pandas code: {str(e)}")
+            print(f"Error generating universal pandas code: {str(e)}")
             return {"error": f"Failed to generate pandas code: {str(e)}"}
+
+    async def _enhance_question_understanding(
+        self,
+        question: str,
+        available_data_context: str,
+        chat_history_context: str
+    ) -> str:
+        try:
+            analysis_context = f"""{chat_history_context}
+User Question: "{question}"
+
+Available Data Files and Columns:
+{available_data_context}
+
+Your task is to deeply analyze this question and enhance it for structured data analysis.
+
+ANALYSIS STEPS:
+1. Understand the question intent (aggregate, filter, analyze, compare, etc.)
+2. Identify what data relationships or patterns are being asked about
+3. Map question terms to potential column names
+4. Determine the appropriate analysis type
+
+QUESTION PATTERNS TO RECOGNIZE:
+- "X wise Y" means "group by X, aggregate Y" (sales by region, profit by category)
+- "X by Y" means "Y grouped by X" (products by category, sales by month)
+- "top/bottom X by Y" means ranking (top customers by revenue)
+- "analysis of X" means comprehensive grouping + aggregation
+- "how many X" means counting group sizes or totals
+- "average X by Y" means mean aggregation by groups
+
+ENHANCED ANALYSIS EXAMPLES:
+- "region wise sales" → "Aggregate total sales grouped by region (find region and sales columns)"
+- "customer performance" → "Analyze customer behavior by grouping customers and aggregating purchase metrics"
+- "product analysis by category" → "Group products by category and calculate performance metrics"
+- "monthly trends" → "Group data by time periods and analyze changes over time"
+
+Provide a detailed analytical question that shows deep understanding of the user's intent."""
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a data analysis expert who understands business questions deeply. Reformulate user questions to show analytical intent and specify what data operations are needed. Focus on understanding relationships and patterns in the data."},
+                    {"role": "user", "content": analysis_context}
+                ],
+                temperature=0.2,
+                max_tokens=200
+            )
+
+            enhanced = response.choices[0].message.content.strip()
+            return enhanced if len(enhanced) > 10 else question  # Fallback to original
+
+        except Exception as e:
+            print(f"Question enhancement failed: {str(e)}")
+            return question  # Always fallback to original question
 
     async def _format_mcp_response(
         self,
