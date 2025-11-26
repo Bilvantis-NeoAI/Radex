@@ -159,9 +159,11 @@ class ApiClient {
   async uploadDocument(folderId: string, file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    
+
+    // Use longer timeout for file uploads (60 seconds to handle MCP processing)
     const response = await this.client.post(`/api/v1/folders/${folderId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000  // 60 seconds for file upload including MCP processing
     });
     return response.data;
   }

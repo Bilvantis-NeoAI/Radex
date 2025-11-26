@@ -191,8 +191,28 @@ export default function FolderDetailPage() {
       }
 
       await loadFolderData(); // Reload to show new documents
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to upload files:', error);
+
+      // Show user-friendly error message
+      let errorMessage = 'Failed to upload file';
+
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Upload timed out. Large files may take longer to process.';
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response?.data?.detail || 'Invalid file or file already exists in folder';
+      } else if (error.response?.status === 413) {
+        errorMessage = 'File is too large. Maximum size is 50MB.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Authentication failed. Please log in again.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'You do not have permission to upload files to this folder.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+
+      // Show alert to user
+      alert(errorMessage);
     } finally {
       setIsUploading(false);
     }
