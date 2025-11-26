@@ -23,13 +23,13 @@ class MCPTools:
     def __init__(self, db: Session, user_id: str):
         self.db = db
         self.user_id = user_id
-        self.data_processor = MCPDataProcessor(settings)
+        self.data_processor = MCPDataProcessor(db, settings)
         self.chat_manager = MCPChatManager(db)
 
-    def list_files(self, folder_id: str = None) -> Dict[str, Any]:
+    async def list_files(self, folder_id: str = None) -> Dict[str, Any]:
         """List uploaded files for the current user"""
         try:
-            files = self.data_processor.list_user_files(self.user_id, folder_id)
+            files = await self.data_processor.list_user_files(self.user_id, folder_id)
             return {
                 "files": files,
                 "count": len(files),
@@ -42,14 +42,14 @@ class MCPTools:
         except Exception as e:
             raise BadRequestException(f"Error listing files: {str(e)}")
 
-    def describe_file(self, file_id: str) -> Dict[str, Any]:
+    async def describe_file(self, file_id: str) -> Dict[str, Any]:
         """Get detailed information about a file"""
         # Verify ownership
         if not file_id.startswith(f"{self.user_id}_"):
             raise PermissionDeniedException("Access denied to this file")
 
         try:
-            description = self.data_processor.describe_file(file_id)
+            description = await self.data_processor.describe_file(file_id)
             return {
                 "file_id": file_id,
                 **description,
@@ -62,14 +62,14 @@ class MCPTools:
         except Exception as e:
             raise BadRequestException(f"Error describing file: {str(e)}")
 
-    def get_columns(self, file_id: str) -> Dict[str, Any]:
+    async def get_columns(self, file_id: str) -> Dict[str, Any]:
         """Get column names for a file"""
         # Verify ownership
         if not file_id.startswith(f"{self.user_id}_"):
             raise PermissionDeniedException("Access denied to this file")
 
         try:
-            columns = self.data_processor.get_columns(file_id)
+            columns = await self.data_processor.get_columns(file_id)
             return {
                 "file_id": file_id,
                 "columns": columns,
@@ -83,7 +83,7 @@ class MCPTools:
         except Exception as e:
             raise BadRequestException(f"Error getting columns: {str(e)}")
 
-    def query_data(self, file_id: str, operation: str, session_id: str,
+    async def query_data(self, file_id: str, operation: str, session_id: str,
                    question: str = None, **kwargs) -> Dict[str, Any]:
         """Execute pandas operations on data"""
         # Verify ownership
@@ -91,7 +91,10 @@ class MCPTools:
             raise PermissionDeniedException("Access denied to this file")
 
         try:
-            result = self.data_processor.execute_query(file_id, operation, **kwargs)
+            result = await self.data_processor.execute_query(file_id, operation, **kwargs)
+
+            # Generate query ID for source tracking
+            query_id = str(uuid.uuid4())
 
             # Save to chat history if provided
             if session_id and question:
@@ -101,12 +104,10 @@ class MCPTools:
                     "file_id": file_id,
                     "columns_used": kwargs.get('column'),
                     "result_type": type(result).__name__,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "query_id": query_id
                 }
-                self.chat_manager.save_query(session_id, question, response_text, source_info)
-
-            # Generate query ID for source tracking
-            query_id = str(uuid.uuid4())
+                self.chat_manager.save_query(session_id, question, response_text, source_info, query_id=query_id)
 
             return {
                 "file_id": file_id,
@@ -196,11 +197,13 @@ Operations: head (show rows), average (column avg), sum (column sum), execute (p
                 # Can't answer with available data
                 polite_response = self._generate_polite_response(question, available_files)
 
-                # Save to chat history
+                # Save to chat history (include a query_id for traceability)
+                ai_query_id = str(uuid.uuid4())
                 self.chat_manager.save_query(session_id, question, polite_response, {
                     "classification": "not_relevant",
-                    "reason": result.get("reason", "Question not answerable with available data")
-                })
+                    "reason": result.get("reason", "Question not answerable with available data"),
+                    "query_id": ai_query_id
+                }, query_id=ai_query_id)
 
                 return {
                     "tool": "none",

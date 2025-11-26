@@ -146,11 +146,22 @@ export default function ChatPage() {
       // Save to localStorage
       saveConversation(folderIds, finalMessages);
     } catch (error: unknown) {
-      console.error('Failed to query RAG:', error);
+      console.error('❌ Failed to query RAG:', error);
+
+      // Check if it's a specific API error
+      let errorContent = 'Sorry, I encountered an error processing your query.';
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any;
+        if (apiError.response?.data?.message) {
+          errorContent += ` Details: ${apiError.response.data.message}`;
+        }
+        console.error('API Error Response:', apiError.response?.data);
+      }
+
       const errorMessage: UIChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error processing your query.',
+        content: errorContent,
         timestamp: new Date(),
       };
       const finalMessages = [...updatedMessages, errorMessage];

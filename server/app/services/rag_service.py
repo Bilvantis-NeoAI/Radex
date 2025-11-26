@@ -9,9 +9,7 @@ from app.core.exceptions import BadRequestException, PermissionDeniedException
 from app.services.permission_service import PermissionService
 from app.services.embedding_service import EmbeddingService
 from app.schemas import RAGQuery, RAGResponse, RAGChunk, ChatRequest, ChatResponse, ChatMessage
-# Import MCP components for CSV/Excel integration
-from app.mcp.tools import MCPTools
-from app.mcp.api import QueryRequest
+# MCP integration handled within methods for CSV/Excel analysis
 
 class RAGService:
     def __init__(self, db: Session):
@@ -314,14 +312,16 @@ Reformulated standalone query:"""
             print(f"Query reformulation failed: {str(e)}. Using original query.")
             return latest_query
 
+    # Removed CSV/Excel MCP detection - all files now go through RAG
+
     async def chat(
         self,
         user_id: UUID,
         chat_request: ChatRequest
     ) -> ChatResponse:
         """
-        Process a chat request with conversation history.
-        Uses last 5 messages for context and reformulates queries for better retrieval.
+        Process a chat request with conversation history using RAG.
+        For CSV/Excel data analysis queries, uses MCP. For regular queries, uses RAG.
         """
         start_time = time.time()
 
@@ -336,66 +336,190 @@ Reformulated standalone query:"""
             if not accessible_folders:
                 raise PermissionDeniedException("No accessible folders found for query")
 
-            # Take last 5 messages for context window
-            context_window_size = 5
-            recent_messages = chat_request.messages[-context_window_size:] if len(chat_request.messages) > context_window_size else chat_request.messages
+            # Extract latest user query
+            latest_user_message = None
+            for msg in reversed(chat_request.messages):
+                if msg.role == "user":
+                    latest_user_message = msg.content
+                    break
 
-            # Reformulate the latest query based on conversation history
-            reformulated_query = await self._reformulate_query(recent_messages)
+            if not latest_user_message:
+                raise BadRequestException("No user message found")
 
-            # Generate query embedding using reformulated query
-            query_embedding = self.embedding_service.generate_embeddings([reformulated_query])[0]
-
-            # Search for similar chunks
-            similar_chunks = self.embedding_service.search_similar_chunks(
-                query_embedding=query_embedding,
-                folder_ids=accessible_folders,
-                limit=chat_request.limit,
-                min_similarity=chat_request.min_relevance_score
+            # Check if this is a CSV/Excel data analysis query
+            is_csv_excel_query, csv_excel_files = self._is_csv_excel_query(
+                latest_user_message, accessible_folders
             )
 
-            if not similar_chunks:
+            if is_csv_excel_query and csv_excel_files:
+                # **CSV/Excel Data Analysis Queries - Use MCP**
+                try:
+                    from app.mcp.tools import MCPTools
+                    mcp_tools = MCPTools(self.db, str(user_id))
+
+                    # Extract MCP file IDs from available CSV/Excel files in accessible folders
+                    mcp_responses = []
+                    processed_files = []
+
+                    for mcp_file in csv_excel_files:
+                        try:
+                            mcp_result = mcp_tools.generate_ai_response(
+                                question=latest_user_message,
+                                available_files=[mcp_file],
+                                session_id=f"mcp_{mcp_file['file_id']}_{time.time()}",
+                                chat_history=chat_request.messages[:-1]  # Previous messages
+                            )
+                            if mcp_result.get('response'):
+                                mcp_responses.append(f"Analysis from {mcp_file['filename']}:\n{mcp_result['response']}")
+                                processed_files.append(mcp_file)
+                        except Exception as e:
+                            print(f"MCP analysis failed for {mcp_file['filename']}: {str(e)}")
+
+                    if not mcp_responses:
+                        response_content = "I couldn't analyze the CSV/Excel data. Please try rephrasing your question."
+                    else:
+                        response_content = "\n\n---\n\n".join(mcp_responses)
+
+                    return ChatResponse(
+                        role="assistant",
+                        content=response_content,
+                        sources=[RAGChunk(
+                            document_id=f["file_id"],
+                            document_name=f["filename"],
+                            folder_id=f["folder_id"],
+                            folder_name=f"Folder {f['folder_id']}",
+                            chunk_text=f"MCP Data Analysis: {f['row_count']} rows, {f['columns']} columns",
+                            relevance_score=1.0,
+                            metadata={"analysis_type": "mcp"}
+                        ) for f in processed_files],
+                        total_chunks=len(processed_files),
+                        processing_time=time.time() - start_time,
+                        reformulated_query=latest_user_message
+                    )
+
+                except Exception as e:
+                    return ChatResponse(
+                        role="assistant",
+                        content="I encountered an error analyzing the CSV/Excel data. Please try again.",
+                        sources=[],
+                        total_chunks=0,
+                        processing_time=time.time() - start_time,
+                        reformulated_query=latest_user_message
+                    )
+
+            else:
+                # **Regular Document Queries - Use RAG**
+                # Take last 5 messages for context window
+                context_window_size = 5
+                recent_messages = chat_request.messages[-context_window_size:] if len(chat_request.messages) > context_window_size else chat_request.messages
+
+                # Reformulate the latest query based on conversation history
+                reformulated_query = await self._reformulate_query(recent_messages)
+
+                # Generate query embedding using reformulated query
+                query_embedding = self.embedding_service.generate_embeddings([reformulated_query])[0]
+
+                # Search for similar chunks from all embedded documents
+                similar_chunks = self.embedding_service.search_similar_chunks(
+                    query_embedding=query_embedding,
+                    folder_ids=accessible_folders,
+                    limit=chat_request.limit,
+                    min_similarity=chat_request.min_relevance_score
+                )
+
+                if not similar_chunks:
+                    return ChatResponse(
+                        role="assistant",
+                        content="No relevant documents found for your query. Try uploading documents first or rephrase your question.",
+                        sources=[],
+                        total_chunks=0,
+                        processing_time=time.time() - start_time,
+                        reformulated_query=reformulated_query
+                    )
+
+                # Generate answer using RAG for regular queries
+                answer = await self._generate_rag_answer(recent_messages, similar_chunks)
+
+                # Format sources
+                sources = []
+                for chunk in similar_chunks:
+                    source = RAGChunk(
+                        document_id=chunk["document_id"],
+                        document_name=chunk["document_name"],
+                        folder_id=chunk["folder_id"],
+                        folder_name=chunk["folder_name"],
+                        chunk_text=chunk["chunk_text"],
+                        relevance_score=chunk["similarity_score"],
+                        metadata=chunk["metadata"]
+                    )
+                    sources.append(source)
+
+                processing_time = time.time() - start_time
+
                 return ChatResponse(
                     role="assistant",
-                    content="No relevant documents found for your query.",
-                    sources=[],
-                    total_chunks=0,
-                    processing_time=time.time() - start_time,
+                    content=answer,
+                    sources=sources,
+                    total_chunks=len(similar_chunks),
+                    processing_time=processing_time,
                     reformulated_query=reformulated_query
                 )
-
-            # Generate answer using conversation context + retrieved documents
-            answer = await self._generate_chat_answer(user_id, recent_messages, similar_chunks, accessible_folders)
-
-            # Format sources
-            sources = []
-            for chunk in similar_chunks:
-                source = RAGChunk(
-                    document_id=chunk["document_id"],
-                    document_name=chunk["document_name"],
-                    folder_id=chunk["folder_id"],
-                    folder_name=chunk["folder_name"],
-                    chunk_text=chunk["chunk_text"],
-                    relevance_score=chunk["similarity_score"],
-                    metadata=chunk["metadata"]
-                )
-                sources.append(source)
-
-            processing_time = time.time() - start_time
-
-            return ChatResponse(
-                role="assistant",
-                content=answer,
-                sources=sources,
-                total_chunks=len(similar_chunks),
-                processing_time=processing_time,
-                reformulated_query=reformulated_query
-            )
 
         except Exception as e:
             if isinstance(e, (BadRequestException, PermissionDeniedException)):
                 raise
             raise BadRequestException(f"Failed to process chat request: {str(e)}")
+
+    def _is_csv_excel_query(self, query: str, accessible_folders: List[UUID]) -> tuple[bool, List[Dict]]:
+        """
+        Determine if query is related to CSV/Excel files.
+        Returns (is_csv_excel_query, list_of_available_csv_excel_files)
+        """
+        # Keywords that suggest CSV/Excel data analysis
+        csv_excel_keywords = [
+            'sum', 'average', 'avg', 'total', 'count', 'max', 'min', 'mean',
+            'calculate', 'computation', 'aggregation', 'analytics', 'analysis',
+            'describe', 'statistics', 'csv', 'excel', 'xlsx', 'xls',
+            'dataframe', 'table', 'rows', 'columns', 'pivot', 'filter',
+            'group', 'sort', 'rank', 'top', 'bottom', 'percentile'
+        ]
+
+        query_lower = query.lower()
+        has_data_keywords = any(keyword in query_lower for keyword in csv_excel_keywords)
+
+        # Find CSV/Excel files with MCP analysis capability in accessible folders
+        csv_excel_files = []
+        try:
+            # Find CSV/Excel documents that have MCP analysis capability
+            from app.models import Document
+            csv_excel_docs = self.db.query(Document).filter(
+                Document.folder_id.in_(accessible_folders),
+                Document.file_type.in_(['csv', 'xlsx', 'xls'])
+            ).all()
+
+            for doc in csv_excel_docs:
+                # Check if this document has MCP analysis capability
+                if doc.doc_metadata and doc.doc_metadata.get('mcp_file_id'):
+                    mcp_file_id = doc.doc_metadata['mcp_file_id']
+                    # Verify MCP file exists
+                    try:
+                        from app.mcp.tools import MCPTools
+                        mcp_tools = MCPTools(self.db, str(UUID(int=0)))  # Dummy user for check
+                        mcp_files = []
+                        for folder_id in accessible_folders:
+                            folder_files = mcp_tools.data_processor.list_user_files(str(UUID(int=0)), str(folder_id))
+                            mcp_files.extend([f for f in folder_files if f['file_id'] == mcp_file_id])
+
+                        if mcp_files:
+                            csv_excel_files.extend(mcp_files)
+                    except:
+                        pass
+
+        except Exception as e:
+            print(f"Error checking MCP files: {e}")
+
+        # Return True if we have data analysis keywords AND CSV/Excel files with MCP capability
+        return has_data_keywords and len(csv_excel_files) > 0, csv_excel_files
 
     async def _generate_chat_answer(
         self,
@@ -407,22 +531,9 @@ Reformulated standalone query:"""
         """
         Generate chat answer using conversation history and retrieved context.
         Uses the last N messages to maintain conversation continuity.
-        Includes MCP analysis for CSV/Excel files.
         """
-        # Extract the latest user query for MCP analysis
-        latest_user_message = None
-        for msg in reversed(messages):
-            if msg.role == "user":
-                latest_user_message = msg.content
-                break
-
-        if not latest_user_message:
-            raise BadRequestException("No user message found for analysis")
-
         # Prepare context from chunks
         context_texts = []
-        excel_csv_analysis = []  # Store MCP results for structured data files
-
         for chunk in context_chunks:
             context_texts.append(
                 f"Document: {chunk['document_name']}\n"
@@ -430,39 +541,7 @@ Reformulated standalone query:"""
                 f"Relevance: {chunk['similarity_score']:.2f}\n"
             )
 
-        # Check for MCP CSV/Excel files across accessible folders
-        if accessible_folders:
-            try:
-                from app.mcp.tools import MCPTools
-                mcp_tools = MCPTools(self.db, str(user_id))
-
-                # Get all MCP files for this user in accessible folders
-                all_mcp_files = []
-                for folder_id in accessible_folders:
-                    folder_files = mcp_tools.data_processor.list_user_files(str(user_id), str(folder_id))
-                    all_mcp_files.extend(folder_files)
-
-                if all_mcp_files:
-                    # Perform MCP analysis for all CSV/Excel files
-                    for mcp_file in all_mcp_files:
-                        try:
-                            mcp_result = mcp_tools.generate_ai_response(
-                                question=latest_user_message,
-                                available_files=[mcp_file],
-                                session_id=f"rag_{mcp_file['file_id']}_{time.time()}",
-                                chat_history=[]
-                            )
-                            if mcp_result.get('response'):
-                                excel_csv_analysis.append(f"Analysis from {mcp_file['filename']}:\n{mcp_result['response']}")
-                        except Exception as e:
-                            print(f"MCP analysis failed for {mcp_file['filename']}: {str(e)}")
-            except Exception as e:
-                print(f"Failed to perform MCP analysis: {str(e)}")
-
         document_context = "\n---\n".join(context_texts)
-
-        if excel_csv_analysis:
-            document_context += "\n\n--- MCP Data Analysis ---\n" + "\n".join(excel_csv_analysis)
 
         # Create system prompt
         system_prompt = """You are a helpful AI assistant that answers questions based on provided documents and conversation history.
@@ -511,3 +590,71 @@ Answer:"""
 
         except Exception as e:
             raise BadRequestException(f"Failed to generate chat answer: {str(e)}")
+
+    async def _generate_rag_answer(
+        self,
+        messages: List[ChatMessage],
+        context_chunks: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Generate RAG answer using conversation history and retrieved context.
+        No MCP analysis - this is for all file types including CSV/Excel.
+        """
+        # Prepare context from chunks
+        context_texts = []
+        for chunk in context_chunks:
+            context_texts.append(
+                f"Document: {chunk['document_name']}\n"
+                f"Content: {chunk['chunk_text']}\n"
+                f"Relevance: {chunk['similarity_score']:.2f}\n"
+            )
+
+        document_context = "\n---\n".join(context_texts)
+
+        # Create system prompt for RAG-only responses
+        system_prompt = """You are a helpful AI assistant that answers questions based on provided documents and conversation history.
+
+Use the provided document context to answer questions accurately. Maintain conversation continuity by considering the chat history.
+If the document context doesn't contain enough information to answer the question, say so clearly.
+Cite the relevant documents when possible.
+Be conversational and natural in your responses."""
+
+        # Build messages for OpenAI
+        openai_messages = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation history (excluding system messages from user)
+        for msg in messages[:-1]:  # Exclude the last message initially
+            if msg.role != "system":
+                openai_messages.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
+
+        # Add the latest message with document context
+        latest_message = messages[-1]
+        if latest_message.role == "user":
+            enhanced_content = f"""Based on the following document context, please answer this question:
+
+Question: {latest_message.content}
+
+Document Context:
+{document_context}
+
+Answer:"""
+            openai_messages.append({
+                "role": "user",
+                "content": enhanced_content
+            })
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=settings.openai_chat_model,
+                messages=openai_messages,
+                max_tokens=500,
+                temperature=0.7
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            raise BadRequestException(f"Failed to generate RAG chat answer: {str(e)}")

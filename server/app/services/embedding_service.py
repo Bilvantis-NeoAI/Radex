@@ -8,13 +8,19 @@ from app.models import Document, Embedding
 from app.config import settings
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.utils import chunk_text_with_metadata
-from app.services.document_service import DocumentService
 
 class EmbeddingService:
     def __init__(self, db: Session):
         self.db = db
         self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
-        self.document_service = DocumentService(db)
+        self._document_service = None  # Lazy import to avoid circular dependency
+    
+    def _get_document_service(self):
+        """Lazy import DocumentService to avoid circular dependency"""
+        if self._document_service is None:
+            from app.services.document_service import DocumentService
+            self._document_service = DocumentService(self.db)
+        return self._document_service
     
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings using OpenAI API"""
@@ -30,12 +36,13 @@ class EmbeddingService:
     async def process_document_embeddings(
         self,
         document_id: UUID,
-        chunk_size: int = 1000,
-        overlap: int = 200
+        chunk_size: int = 500,  # Reduced from 1000 to be safer
+        overlap: int = 100      # Reduced from 200
     ) -> List[Embedding]:
         """Process a document and generate embeddings for all chunks"""
         # Get document
-        document = self.document_service.get_document(document_id)
+        document_service = self._get_document_service()
+        document = document_service.get_document(document_id)
         if not document:
             raise NotFoundException("Document not found")
         
@@ -53,10 +60,16 @@ class EmbeddingService:
         
         try:
             # Extract text from document
-            text = self.document_service.extract_document_text(document_id)
-            
+            text = document_service.extract_document_text(document_id)
+
             if not text.strip():
                 raise BadRequestException("Document contains no extractable text")
+
+            # Safety check: Skip very large documents that would exceed OpenAI token limits
+            estimated_tokens = len(text) // 4  # Rough approximation: ~4 characters per token
+            if estimated_tokens > 250000:  # Leave buffer below the 300k limit
+                print(f"Document {document_id} is too large ({estimated_tokens} tokens). Skipping embeddings.")
+                raise BadRequestException(f"Document is too large for processing ({estimated_tokens} estimated tokens). Maximum is 250,000 tokens.")
             
             # Chunk the text
             chunks_with_metadata = chunk_text_with_metadata(
@@ -126,15 +139,24 @@ class EmbeddingService:
             # Convert similarity threshold to distance threshold
             # cosine distance = 1 - cosine similarity
             max_distance = 1 - min_similarity
-            
+
             # Build SQL query for vector similarity search
             folder_ids_str = ",".join([f"'{folder_id}'" for folder_id in folder_ids])
-            
+
             # Convert query embedding to string format for PostgreSQL vector
             query_embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
-            
+
+            # First check if pgvector extension is available
+            try:
+                check_ext = self.db.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector';"))
+                if not check_ext.fetchone():
+                    raise BadRequestException("pgvector extension not enabled in PostgreSQL. Please install and enable the pgvector extension to use vector similarity search.")
+            except Exception as ext_err:
+                if "pg_extension" in str(ext_err).lower() or "vector" in str(ext_err).lower():
+                    raise BadRequestException("pgvector extension check failed. Vector search requires pgvector PostgreSQL extension.")
+
             query = text(f"""
-                SELECT 
+                SELECT
                     e.id,
                     e.document_id,
                     e.chunk_index,
@@ -152,7 +174,7 @@ class EmbeddingService:
                 ORDER BY e.embedding <=> :query_embedding ::vector
                 LIMIT :limit
             """)
-            
+
             result = self.db.execute(
                 query,
                 {"query_embedding": query_embedding_str, "min_similarity": min_similarity, "limit": limit}

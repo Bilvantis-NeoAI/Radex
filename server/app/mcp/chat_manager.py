@@ -34,13 +34,33 @@ class MCPChatManager:
         return session.id
 
     def save_query(self, session_id: str, question: str, response: str,
-                   source_info: Dict[str, Any] = None) -> int:
-        """Save a Q&A pair to history"""
+                   source_info: Dict[str, Any] = None, query_id: str = None) -> int:
+        """Save a Q&A pair to history. Optionally persist a `query_id` inside `source_info`."""
+        # Ensure session exists before saving query (fix foreign key violation)
+        session = self.db.query(McpChatSession).filter(McpChatSession.session_id == session_id).first()
+        if not session:
+            # Extract user_id from session_id pattern (mcp_session_timestamp_userid)
+            if '_' in session_id:
+                parts = session_id.split('_')
+                if len(parts) >= 4:
+                    user_id = parts[3]  # Extract user_id from mcp_session_timestamp_userid
+                else:
+                    user_id = "system"  # Fallback
+            else:
+                user_id = "system"  # Fallback
+
+            self.create_session(user_id, session_id)
+
+        # Ensure source_info is a dict and include query_id if provided
+        src = dict(source_info or {})
+        if query_id:
+            src.setdefault("query_id", query_id)
+
         query_history = McpQueryHistory(
             session_id=session_id,
             question=question,
             response=response,
-            source_info=json.dumps(source_info or {}),
+            source_info=json.dumps(src),
             created_at=datetime.utcnow()
         )
         self.db.add(query_history)

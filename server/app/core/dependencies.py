@@ -55,6 +55,8 @@ async def get_current_user(
     # Fallback to legacy JWT token verification
     try:
         payload = decode_access_token(token)
+        if payload is None:
+            raise credentials_exception
         user_id: str = payload.get("sub")
 
         if user_id is None:

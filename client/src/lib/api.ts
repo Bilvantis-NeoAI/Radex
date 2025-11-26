@@ -199,7 +199,14 @@ class ApiClient {
     limit?: number;
     min_relevance_score?: number;
   }) {
-    const response = await this.client.post('/api/v1/rag/chat', data);
+    console.log('🎯 RAG Chat Request:', data);
+
+    // Increase timeout to 60 seconds for RAG processing (which can take time)
+    const response = await this.client.post('/api/v1/rag/chat', data, {
+      timeout: 60000,  // 60 seconds instead of default 10 seconds
+    });
+
+    console.log('✅ RAG Chat Response:', response.data);
     return response.data;
   }
 
