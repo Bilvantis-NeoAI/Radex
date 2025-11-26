@@ -173,6 +173,7 @@ async def _sync_single_item(
             ProviderItemRef.provider == ProviderType.sharepoint,
             ProviderItemRef.drive_id == item.drive_id,
             ProviderItemRef.item_id == item.item_id,
+            ProviderItemRef.connection_id == connection.id,
         )
         .first()
     )
