@@ -247,12 +247,20 @@ class MicrosoftGraphService:
             Valid access token string
 
         Raises:
-            BadRequestException: If token refresh fails
+            BadRequestException: If token refresh fails or tokens are corrupted
         """
         encryption_service = get_token_encryption_service()
 
-        # Decrypt stored tokens
-        token_data = encryption_service.decrypt_tokens(connection.encrypted_tokens)
+        try:
+            # Decrypt stored tokens
+            token_data = encryption_service.decrypt_tokens(connection.encrypted_tokens)
+        except BadRequestException as e:
+            # If decryption fails, the tokens are corrupted or encrypted with a different key
+            raise BadRequestException(
+                "SharePoint connection is corrupted or uses an old encryption key. "
+                "Please disconnect and re-authenticate: " + str(e) + ". "
+                "Clear your SharePoint connections and try again."
+            )
 
         # Check if token is expired
         if encryption_service.is_token_expired(token_data):
@@ -261,13 +269,20 @@ class MicrosoftGraphService:
             if not refresh_token:
                 raise BadRequestException("No refresh token available. Please re-authenticate.")
 
-            # Get new tokens
-            token_data = await self.refresh_access_token(refresh_token)
+            try:
+                # Get new tokens
+                token_data = await self.refresh_access_token(refresh_token)
 
-            # Update database with new tokens
-            encrypted_tokens = encryption_service.encrypt_tokens(token_data)
-            connection.encrypted_tokens = encrypted_tokens
-            self.db.commit()
+                # Update database with new tokens
+                encrypted_tokens = encryption_service.encrypt_tokens(token_data)
+                connection.encrypted_tokens = encrypted_tokens
+                self.db.commit()
+            except BadRequestException:
+                # If refresh fails, suggest re-authentication
+                raise BadRequestException(
+                    "Token refresh failed. Please disconnect this SharePoint connection "
+                    "and authenticate again. Your stored tokens may be expired or invalid."
+                )
 
         return token_data["access_token"]
 
@@ -319,13 +334,23 @@ class MicrosoftGraphService:
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
+                # Try to parse Microsoft Graph error response
+                try:
+                    error_data = e.response.json()
+                    error_message = error_data.get('error', {}).get('message', e.response.text)
+                except:
+                    error_message = e.response.text
+
                 if e.response.status_code == 404:
                     raise NotFoundException(f"Resource not found: {endpoint}")
                 elif e.response.status_code == 403:
                     raise PermissionDeniedException("Insufficient permissions to access resource")
+                elif e.response.status_code == 400:
+                    raise BadRequestException(f"Invalid request to Graph API: {error_message}")
+                elif e.response.status_code == 401:
+                    raise BadRequestException(f"Unauthorized access to Graph API: {error_message}")
                 else:
-                    error_detail = e.response.text
-                    raise BadRequestException(f"Graph API error: {error_detail}")
+                    raise BadRequestException(f"Graph API error ({e.response.status_code}): {error_message}")
             except httpx.HTTPError as e:
                 raise BadRequestException(f"Failed to call Graph API: {e}")
 
@@ -339,8 +364,18 @@ class MicrosoftGraphService:
 
         Returns:
             Drive metadata including ID, name, and type
+
+        Raises:
+            BadRequestException: If OneDrive is not available or accessible
         """
-        return await self._make_graph_request(connection, "GET", "/me/drive")
+        try:
+            return await self._make_graph_request(connection, "GET", "/me/drive")
+        except NotFoundException:
+            raise BadRequestException("OneDrive is not available for this account. Please ensure your account has OneDrive for Business or personal OneDrive enabled.")
+        except BadRequestException as e:
+            if "drive" in str(e).lower() or "onedrive" in str(e).lower():
+                raise BadRequestException("OneDrive access is not available. Please check your account permissions and ensure OneDrive is enabled.")
+            raise
 
     async def get_drive_children(
         self,

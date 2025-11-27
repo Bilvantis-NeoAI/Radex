@@ -131,10 +131,19 @@ class MCPTools:
 
         try:
             # Build context with available files and columns
-            files_context = "\n".join([
-                f"- {f['filename']}: columns {', '.join(f['columns'])}\n  Rows: {f['row_count']}"
-                for f in available_files
-            ])
+            files_context_parts = []
+            for f in available_files:
+                try:
+                    columns = f.get('columns', [])
+                    if not isinstance(columns, list):
+                        columns = []  # Fallback if columns is not a list
+                    columns_str = ', '.join(str(col) for col in columns) if columns else 'unknown'
+                    files_context_parts.append(f"- {f['filename']}: columns {columns_str}\n  Rows: {f['row_count']}")
+                except Exception as e:
+                    # Fallback if any individual file parsing fails
+                    files_context_parts.append(f"- {f['filename']}: columns unavailable\n  Rows: {f.get('row_count', 'unknown')}")
+
+            files_context = "\n".join(files_context_parts)
 
             # Build chat history context
             history_context = ""
@@ -220,10 +229,19 @@ Operations: head (show rows), average (column avg), sum (column sum), execute (p
         try:
             client = openai.OpenAI(api_key=settings.openai_api_key)
 
-            files_info = "\n".join([
-                f"- {f['filename']} ({f['row_count']:,} rows, {', '.join(f['columns'][:3])}{'...' if len(f['columns']) > 3 else ''})"
-                for f in available_files
-            ])
+            files_info_parts = []
+            for f in available_files:
+                try:
+                    columns = f.get('columns', [])
+                    if isinstance(columns, list) and columns:
+                        columns_display = f"{', '.join(str(col) for col in columns[:3])}{'...' if len(columns) > 3 else ''}"
+                    else:
+                        columns_display = "columns unavailable"
+                    files_info_parts.append(f"- {f['filename']} ({f.get('row_count', 0):,} rows, {columns_display})")
+                except Exception:
+                    files_info_parts.append(f"- {f['filename']} ({f.get('row_count', 0):,} rows, columns unavailable)")
+
+            files_info = "\n".join(files_info_parts)
 
             context = f"""User asked: "{question}"
 

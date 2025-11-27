@@ -193,6 +193,33 @@ async def disconnect(
     db.commit()
 
 
+@router.delete("/connections", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_all(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    _enabled: None = Depends(check_sharepoint_enabled),
+):
+    """
+    Disconnect and delete ALL SharePoint provider connections for the user.
+
+    Useful for clearing corrupted or old authentication data.
+    User will need to re-authorize to access SharePoint files again.
+    """
+    connections = (
+        db.query(ProviderConnection)
+        .filter(
+            ProviderConnection.provider == ProviderType.sharepoint,
+            ProviderConnection.user_id == current_user.id,
+        )
+        .all()
+    )
+
+    for connection in connections:
+        db.delete(connection)
+
+    db.commit()
+
+
 @router.get("/connections", response_model=ProviderConnectionsResponse)
 async def list_connections(
     current_user: User = Depends(get_current_active_user),
@@ -226,6 +253,107 @@ async def list_connections(
             for conn in connections
         ]
     )
+
+
+@router.post("/{connection_id}/test-connection", response_model=dict)
+async def test_connection(
+    connection_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    _enabled: None = Depends(check_sharepoint_enabled),
+):
+    """
+    Test SharePoint connection by validating tokens and making a simple API call.
+
+    Returns:
+        Dict with connection status and basic user info
+
+    Raises:
+        BadRequestException: If connection is invalid or tokens are expired
+    """
+    connection = _get_user_connection(db, connection_id, current_user.id)
+    graph_service = MicrosoftGraphService(db)
+
+    try:
+        # Test token by getting user profile
+        user_info = await graph_service._make_graph_request(
+            connection, "GET", "/me?$select=id,displayName,userPrincipalName"
+        )
+
+        # Test OneDrive access (this is what was failing)
+        try:
+            drive_info = await graph_service.get_onedrive_root(connection)
+            onedrive_status = "available"
+        except Exception as e:
+            onedrive_status = f"unavailable: {str(e)}"
+
+        return {
+            "status": "connected",
+            "user": {
+                "id": user_info.get("id"),
+                "display_name": user_info.get("displayName"),
+                "user_principal_name": user_info.get("userPrincipalName"),
+            },
+            "onedrive": onedrive_status,
+            "tenant_id": connection.tenant_id,
+        }
+
+    except BadRequestException as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "requires_reauth": True,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": f"Unexpected error: {str(e)}",
+            "requires_reauth": True,
+        }
+
+
+@router.post("/{connection_id}/refresh-tokens", response_model=dict)
+async def refresh_tokens(
+    connection_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    _enabled: None = Depends(check_sharepoint_enabled),
+):
+    """
+    Force refresh of SharePoint connection tokens.
+
+    Returns:
+        Dict with refresh status
+    """
+    connection = _get_user_connection(db, connection_id, current_user.id)
+    graph_service = MicrosoftGraphService(db)
+    encryption_service = get_token_encryption_service()
+
+    try:
+        # Decrypt current tokens
+        token_data = encryption_service.decrypt_tokens(connection.encrypted_tokens)
+
+        # Refresh tokens
+        new_token_data = await graph_service.refresh_access_token(
+            token_data.get("refresh_token")
+        )
+
+        # Update connection with new tokens
+        encrypted_tokens = encryption_service.encrypt_tokens(new_token_data)
+        connection.encrypted_tokens = encrypted_tokens
+        db.commit()
+
+        return {
+            "status": "refreshed",
+            "new_expires_at": new_token_data.get("expires_at"),
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Token refresh failed. Please re-authenticate.",
+        }
 
 
 # ============================================================================

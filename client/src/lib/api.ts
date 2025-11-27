@@ -473,6 +473,29 @@ class ApiClient {
   }
 
   /**
+   * Clear all SharePoint connections for the user
+   */
+  async clearAllSharePointConnections() {
+    await this.client.delete('/api/v1/providers/sharepoint/connections');
+  }
+
+  /**
+   * Test SharePoint connection
+   */
+  async testSharePointConnection(connectionId: string) {
+    const response = await this.client.post(`/api/v1/providers/sharepoint/${connectionId}/test-connection`);
+    return response.data; // { status, user?, onedrive?, error?, requires_reauth? }
+  }
+
+  /**
+   * Refresh SharePoint tokens
+   */
+  async refreshSharePointTokens(connectionId: string) {
+    const response = await this.client.post(`/api/v1/providers/sharepoint/${connectionId}/refresh-tokens`);
+    return response.data; // { status, new_expires_at?, error?, message? }
+  }
+
+  /**
    * Get OneDrive root drive information
    */
   async getOneDriveRoot(connectionId: string) {

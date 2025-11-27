@@ -487,37 +487,70 @@ Reformulated standalone query:"""
         query_lower = query.lower()
         has_data_keywords = any(keyword in query_lower for keyword in csv_excel_keywords)
 
-        # Find CSV/Excel files with MCP analysis capability in accessible folders
+        # Find CSV/Excel files with MCP analysis capability
         csv_excel_files = []
         try:
-            # Find CSV/Excel documents that have MCP analysis capability
+            # Check both Document records with MCP IDs and direct MCP files
             from app.models import Document
+
+            # 1. Check Document records with MCP analysis capability
             csv_excel_docs = self.db.query(Document).filter(
                 Document.folder_id.in_(accessible_folders),
                 Document.file_type.in_(['csv', 'xlsx', 'xls'])
             ).all()
 
             for doc in csv_excel_docs:
-                # Check if this document has MCP analysis capability
-                if doc.doc_metadata and doc.doc_metadata.get('mcp_file_id'):
-                    mcp_file_id = doc.doc_metadata['mcp_file_id']
-                    # Verify MCP file exists
+                doc_metadata = doc.doc_metadata or {}
+
+                if doc_metadata.get('mcp_file_id'):
+                    mcp_file_id = doc_metadata['mcp_file_id']
                     try:
                         from app.mcp.tools import MCPTools
-                        mcp_tools = MCPTools(self.db, str(UUID(int=0)))  # Dummy user for check
-                        mcp_files = []
-                        for folder_id in accessible_folders:
-                            folder_files = mcp_tools.data_processor.list_user_files(str(UUID(int=0)), str(folder_id))
-                            mcp_files.extend([f for f in folder_files if f['file_id'] == mcp_file_id])
+                        mcp_tools = MCPTools(self.db, "temp_user")
+                        mcp_file = mcp_tools.data_processor.read_file(mcp_file_id)
+                        if mcp_file is not None:
+                            csv_excel_files.append({
+                                "file_id": mcp_file_id,
+                                "filename": doc.filename,
+                                "columns": list(mcp_file.columns),
+                                "row_count": len(mcp_file),
+                                "folder_id": str(doc.folder_id)
+                            })
+                    except Exception as e:
+                        print(f"Failed to load MCP file {mcp_file_id} from Document: {e}")
+                        # Fallback
+                        if doc_metadata.get('columns'):
+                            csv_excel_files.append({
+                                "file_id": mcp_file_id,
+                                "filename": doc.filename,
+                                "columns": doc_metadata.get('columns', []),
+                                "row_count": doc_metadata.get('row_count', 0),
+                                "folder_id": str(doc.folder_id)
+                            })
 
-                        if mcp_files:
-                            csv_excel_files.extend(mcp_files)
-                    except:
-                        pass
+            # 2. Also check for direct MCP files uploaded via MCP API
+            try:
+                from app.mcp.data_processor import MCPDataProcessor
+                from app.config import settings
+                data_processor = MCPDataProcessor(settings, self.db)
+                # Get MCP files for all users first, then filter by folder
+                all_mcp_files = data_processor.list_user_files("any_user", None)
+                for mcp_file in all_mcp_files:
+                    # Check if this MCP file belongs to one of our accessible folders
+                    if any(str(fid) == mcp_file.get('folder_id', '') for fid in accessible_folders):
+                        # Avoid duplicates
+                        file_ids = {f['file_id'] for f in csv_excel_files}
+                        if mcp_file['file_id'] not in file_ids:
+                            csv_excel_files.append(mcp_file)
+                            print(f"Added direct MCP file: {mcp_file['filename']}")
+
+            except Exception as e:
+                print(f"Error checking direct MCP files: {e}")
 
         except Exception as e:
             print(f"Error checking MCP files: {e}")
 
+        print(f"Found {len(csv_excel_files)} MCP-enabled CSV/Excel files for query routing")#
         # Return True if we have data analysis keywords AND CSV/Excel files with MCP capability
         return has_data_keywords and len(csv_excel_files) > 0, csv_excel_files
 

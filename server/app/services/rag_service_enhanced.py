@@ -545,14 +545,9 @@ Reformulated standalone query:"""
                     from app.mcp.enhanced_tools import EnhancedMCPTools
                     enhanced_mcp_tools = EnhancedMCPTools(self.db, str(user_id))
 
-                    # Ensure MCP processor can access the file metadata by syncing if needed
-                    if not hasattr(enhanced_mcp_tools.data_processor, 'file_metadata') or not enhanced_mcp_tools.data_processor.file_metadata:
-                        try:
-                            from app.mcp.data_processor import MCPDataProcessor
-                            temp_processor = MCPDataProcessor(settings, self.db)  # settings first, then DB
-                            await temp_processor.list_user_files(str(user_id))  # Ensure metadata is loaded
-                        except Exception as sync_err:
-                            print(f"Warning: MCP metadata preload failed: {sync_err}")
+                    # Ensure MCP processor has DB access and sync metadata
+                    enhanced_mcp_tools.data_processor.db = self.db
+                    await enhanced_mcp_tools.data_processor.list_user_files(str(user_id))
 
                     # Create context for pandas code generation
                     files_context = "\n".join([
@@ -956,6 +951,26 @@ Reformulated standalone query:"""
         if not all_csv_excel_docs:
             print("No CSV/Excel files found in accessible folders")
             return False, []
+
+        # Use keyword-based detection first, then OpenAI for more complex cases
+        question_lower = query.lower()
+        is_data_keywords = any(keyword in question_lower for keyword in [
+            'average', 'sum', 'count', 'total', 'top ', 'highest', 'lowest', 'minimum', 'maximum',
+            'mean', 'median', 'min', 'max', 'how many', 'how much', 'filter', 'sort', 'aggregate',
+            'group by', 'wise', 'by region', 'by category', 'by product', 'by date', 'by time'
+        ])
+
+        # Check if question is about system/docs vs data analysis
+        is_system_keywords = any(keyword in question_lower for keyword in [
+            'how to', 'what is', 'explain', 'describe', 'setup', 'configuration',
+            'architecture', 'feature', 'capability', 'system', 'framework', 'poc',
+            'report', 'documentation', 'guide', 'overview'
+        ])
+
+        # If system keywords found, route to document analysis (RAG)
+        if is_system_keywords:
+            print(f"SYSTEM KEYWORD DETECTED: '{query}' → DOCUMENT ANALYSIS (system/framework questions)")
+            return False, []  # False = not CSV/excel query, route to RAG
 
         # Use OpenAI to analyze question and determine if it needs structured data analysis
         try:

@@ -34,7 +34,7 @@ if config.config_file_name is not None:
 # Set the database URL from our settings
 config.set_main_option(
     "sqlalchemy.url",
-    f"postgresql://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+    f"postgresql+psycopg://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 )
 
 # add your model's MetaData object here

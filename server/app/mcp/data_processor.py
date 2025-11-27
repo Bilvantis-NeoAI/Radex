@@ -85,31 +85,52 @@ class MCPDataProcessor:
 
             # Store enhanced metadata in database
             if self.db:
-                db_metadata = McpFileMetadata(
-                    file_id=file_id,
-                    user_id=user_id,
-                    folder_id=folder_id,
-                    filename=filename,
-                    object_name=object_name,
-                    file_type='csv' if filename.lower().endswith('.csv') else 'excel',
-                    file_size=len(file_data),
-                    row_count=len(df),
-                    columns=list(df.columns)
-                )
+                # Check if MCP file metadata already exists (handle re-uploads)
+                existing_metadata = self.db.query(McpFileMetadata).filter(McpFileMetadata.file_id == file_id).first()
 
-                # Store enhanced metadata as JSON in doc_metadata field
-                enhanced_metadata = {
-                    'content_analysis': content_analysis,
-                    'domain': content_analysis['domain'],
-                    'intent_keywords': content_analysis['intent_keywords'],
-                    'semantic_tags': content_analysis['semantic_tags']
-                }
-                db_metadata.doc_metadata = enhanced_metadata
+                if existing_metadata:
+                    # Update existing metadata for re-upload
+                    existing_metadata.row_count = len(df)
+                    existing_metadata.columns = list(df.columns)
+                    existing_metadata.file_size = len(file_data)
 
-                self.db.add(db_metadata)
-                self.db.commit()
-                print(f"Stored enhanced MCP file metadata in database: {file_id}")
-                print(f"  Domain: {content_analysis['domain']}, Keywords: {content_analysis['intent_keywords'][:3]}")
+                    # Update enhanced metadata as JSON in doc_metadata field
+                    enhanced_metadata = {
+                        'content_analysis': content_analysis,
+                        'domain': content_analysis['domain'],
+                        'intent_keywords': content_analysis['intent_keywords'],
+                        'semantic_tags': content_analysis['semantic_tags']
+                    }
+                    existing_metadata.doc_metadata = enhanced_metadata
+
+                    print(f"Updated existing MCP file metadata in database: {file_id}")
+                    print(f"  Domain: {content_analysis['domain']}, Keywords: {content_analysis['intent_keywords'][:3]}")
+                else:
+                    # Create new metadata record
+                    db_metadata = McpFileMetadata(
+                        file_id=file_id,
+                        user_id=user_id,
+                        folder_id=folder_id,
+                        filename=filename,
+                        object_name=object_name,
+                        file_type='csv' if filename.lower().endswith('.csv') else 'excel',
+                        file_size=len(file_data),
+                        row_count=len(df),
+                        columns=list(df.columns)
+                    )
+
+                    # Store enhanced metadata as JSON in doc_metadata field
+                    enhanced_metadata = {
+                        'content_analysis': content_analysis,
+                        'domain': content_analysis['domain'],
+                        'intent_keywords': content_analysis['intent_keywords'],
+                        'semantic_tags': content_analysis['semantic_tags']
+                    }
+                    db_metadata.doc_metadata = enhanced_metadata
+
+                    self.db.add(db_metadata)
+                    print(f"Stored new MCP file metadata in database (pending commit): {file_id}")
+                    print(f"  Domain: {content_analysis['domain']}, Keywords: {content_analysis['intent_keywords'][:3]}")
             else:
                 # Fallback to in-memory if no DB
                 metadata = {
@@ -186,10 +207,92 @@ class MCPDataProcessor:
                         print(f"Loaded file metadata from database for file_id: {file_id}")
                         print(f"DEBUG: Loaded metadata object_name: {metadata['object_name']}")
                     else:
-                        # Let's see all files in DB to debug
-                        all_files = self.db.query(McpFileMetadata).all()
-                        print(f"DEBUG: All file IDs in database: {[f.file_id for f in all_files]}")
-                        raise BadRequestException(f"File metadata not found in database: {file_id}")
+                        # MCP metadata not found in database - try auto-creation from Document table
+                        print(f"MCP metadata not found for {file_id}, attempting auto-creation from Document table")
+
+                        # Parse file_id to extract components
+                        import re
+                        match = re.match(r'^([^_]+)_([^_]+)_(.+)$', file_id)
+                        if match:
+                            user_id, folder_id, filename = match.groups()
+
+                            try:
+                                from app.models import Document
+                                # Find the corresponding document
+                                doc = self.db.query(Document).filter(
+                                    Document.doc_metadata.contains(f'{{"mcp_file_id": "{file_id}"}}')
+                                ).first()
+
+                                if doc:
+                                    print(f"Found document for MCP auto-creation: {doc.filename}")
+
+                                    # Read the actual file to get metadata
+                                    try:
+                                        # Construct object name - should match the pattern from upload
+                                        object_name = f"mcp/{user_id}/{folder_id}/{filename}"
+                                        print(f"Attempting to read file from MinIO: {object_name}")
+
+                                        df = await self._read_file_from_minio(object_name)
+                                        print(f"Successfully read file with {len(df)} rows and {len(df.columns)} columns")
+
+                                        # Analyze file content
+                                        content_analysis = self._analyze_file_content(df, filename)
+
+                                        # Create MCP metadata record
+                                        db_metadata = McpFileMetadata(
+                                            file_id=file_id,
+                                            user_id=user_id,
+                                            folder_id=folder_id,
+                                            filename=filename,
+                                            object_name=object_name,
+                                            file_type='csv' if filename.lower().endswith('.csv') else 'excel',
+                                            file_size=doc.file_size,
+                                            row_count=len(df),
+                                            columns=list(df.columns)
+                                        )
+
+                                        # Store enhanced metadata as JSON in doc_metadata field
+                                        enhanced_metadata = {
+                                            'content_analysis': content_analysis,
+                                            'domain': content_analysis['domain'],
+                                            'intent_keywords': content_analysis['intent_keywords'],
+                                            'semantic_tags': content_analysis['semantic_tags']
+                                        }
+                                        db_metadata.doc_metadata = enhanced_metadata
+
+                                        self.db.add(db_metadata)
+                                        self.db.commit()
+
+                                        # Load into cache
+                                        metadata = {
+                                            'user_id': user_id,
+                                            'folder_id': folder_id,
+                                            'filename': filename,
+                                            'columns': list(df.columns),
+                                            'row_count': len(df),
+                                            'file_size': doc.file_size,
+                                            'object_name': object_name,
+                                            'upload_time': time.time(),
+                                            'last_accessed': time.time()
+                                        }
+                                        self.file_metadata[file_id] = metadata
+
+                                        print(f"Successfully auto-created MCP metadata for {file_id}")
+                                        print(f"  Columns: {list(df.columns)}")
+                                        print(f"  Rows: {len(df)}")
+
+                                    except Exception as read_err:
+                                        print(f"Failed to read/create MCP metadata for {file_id}: {read_err}")
+                                        raise BadRequestException(f"Could not create MCP metadata for file: {file_id}")
+                                else:
+                                    print(f"No document found with mcp_file_id {file_id}")
+                                    raise BadRequestException(f"File metadata not found in database: {file_id}")
+                            except Exception as doc_err:
+                                print(f"Error querying for document: {doc_err}")
+                                raise BadRequestException(f"File metadata not found in database: {file_id}")
+                        else:
+                            print(f"Could not parse file_id format: {file_id}")
+                            raise BadRequestException(f"Invalid file_id format: {file_id}")
                 except Exception as db_err:
                     print(f"Database query failed for file {file_id}: {db_err}")
                     import traceback
