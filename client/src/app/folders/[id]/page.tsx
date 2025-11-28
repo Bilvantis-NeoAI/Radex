@@ -470,6 +470,20 @@ export default function FolderDetailPage() {
         connectionId={sharePointConnectionId}
         folderId={folderId}
         onImportComplete={handleImportComplete}
+        SharePointReauthenticateRequested={async () => {
+          alert('Your SharePoint session has expired. Please reauthenticate.');
+          setSharePointConnectionId(null); // Clear the invalid connection
+          sessionStorage.removeItem('sp_connection_id'); // Clear any stored session connection ID
+
+          try {
+            // Initiate a new OAuth flow
+            const authResponse = await apiClient.startSharePointAuth();
+            window.location.href = authResponse.auth_url; // Redirect to Microsoft OAuth
+          } catch (error) {
+            console.error('Failed to restart SharePoint auth flow:', error);
+            alert('Failed to reauthenticate Microsoft 365. Please try again.');
+          }
+        }}
       />
     </div>
   );

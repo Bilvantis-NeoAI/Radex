@@ -28,6 +28,7 @@ interface SharePointFilePickerProps {
   connectionId: string | null;
   folderId: string;
   onImportComplete: (result: SyncImportResponse) => void;
+  SharePointReauthenticateRequested: () => void;
 }
 
 type Tab = 'onedrive' | 'sharepoint';
@@ -38,6 +39,7 @@ export function SharePointFilePicker({
   connectionId,
   folderId,
   onImportComplete,
+  SharePointReauthenticateRequested,
 }: SharePointFilePickerProps) {
   const [activeTab, setActiveTab] = useState<Tab>('onedrive');
   const [loading, setLoading] = useState(false);
@@ -84,10 +86,15 @@ export function SharePointFilePicker({
           : 'Failed to load OneDrive';
       setError(errorMessage);
       console.error('Failed to load OneDrive:', err);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, SharePointReauthenticateRequested, onClose]);
 
   useEffect(() => {
     if (isOpen && connectionId && activeTab === 'onedrive') {
@@ -122,6 +129,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to navigate to folder';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
@@ -155,6 +167,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to navigate';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
@@ -177,6 +194,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to search sites';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
@@ -200,6 +222,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to load site drives';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
@@ -224,6 +251,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to load drive';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setLoading(false);
     }
@@ -280,6 +312,11 @@ export function SharePointFilePicker({
           ? String(err.response.data.detail)
           : 'Failed to import files';
       setError(errorMessage);
+      if (errorMessage.includes('Failed to decrypt token data') || errorMessage.includes('SharePoint token invalid')) {
+        console.log('SharePoint reauthentication requested due to token issue.');
+        SharePointReauthenticateRequested();
+        onClose();
+      }
     } finally {
       setImporting(false);
     }
