@@ -17,6 +17,9 @@ from app.utils import (
     extract_text_from_file,
     validate_file_size
 )
+# Import MCP components for CSV/Excel handling
+from app.mcp.data_processor import MCPDataProcessor
+from app.config import settings
 
 class DocumentService:
     def __init__(self, db: Session):
@@ -99,25 +102,92 @@ class DocumentService:
         
         # Upload to MinIO
         object_name = self._get_object_name(str(document.id), file.filename)
-        
+
         try:
             # Create a temporary file for upload
-            with tempfile.NamedTemporaryFile() as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                 temp_file.write(file_content)
                 temp_file.seek(0)
-                
+                temp_file_path = temp_file.name
+
+            try:
+                # Now use the temp file for MinIO upload
                 self.minio_client.fput_object(
                     settings.minio_bucket,
                     object_name,
-                    temp_file.name,
+                    temp_file_path,
                     content_type=file.content_type
                 )
+            finally:
+                # Clean up temp file with a small delay to avoid Windows file lock issues
+                import time
+                time.sleep(0.1)  # Give MinIO time to finish reading
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to clean up temp file {temp_file_path}: {cleanup_error}")
             
-            # Update document with file path
+            # For CSV/Excel files, also upload to MCP
+            mcp_file_id = None
+            if file_type.lower() in ['csv', 'xlsx', 'xls']:
+                try:
+                    print(f"Attempting MCP upload for {file.filename}")
+                    mcp_processor = MCPDataProcessor(settings, self.db)  # FIXED: Pass DB session
+                    mcp_result = await mcp_processor.upload_file(
+                        file_data=file_content,
+                        filename=file.filename,
+                        folder_id=str(folder_id),
+                        user_id=str(uploaded_by)
+                    )
+                    mcp_file_id = mcp_result.get('file_id')
+                    print(f"MCP upload result: {mcp_result}")
+                    if mcp_file_id:
+                        print(f"MCP file_id set: {mcp_file_id}")
+                    else:
+                        print("MCP upload failed - no file_id returned")
+                except Exception as e:
+                    # Log error but don't fail document upload
+                    print(f"Warning: Failed to upload to MCP: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Update document with file path BEFORE embeddings (need it for MinIO access)
             document.file_path = object_name
+
+            # Update document metadata with MCP info
+            if mcp_file_id:
+                existing_metadata = document.doc_metadata or {}
+                updated_metadata = {**existing_metadata, 'mcp_file_id': mcp_file_id}
+                document.doc_metadata = updated_metadata
+                print(f"Updated document metadata: {updated_metadata}")
+
+            # For unstructured documents (PDFs, DOCs, etc.), generate embeddings immediately
+            # AFTER file_path is set but BEFORE commit so session is still valid
+            if file_type.lower() not in ['csv', 'xlsx', 'xls']:
+                try:
+                    print(f"Processing embeddings for {file.filename} (type: {file_type})")
+                    from app.services.embedding_service import EmbeddingService
+                    embedding_service = EmbeddingService(self.db)
+
+                    # Process document embeddings
+                    print(f"Starting embedding process for document {document.id}")
+                    embeddings = await embedding_service.process_document_embeddings(
+                        document_id=document.id,
+                        chunk_size=500,  # Good balance of context and searchability
+                        overlap=100
+                    )
+                    print(f"Successfully generated {len(embeddings)} embedding chunks for {file.filename}")
+
+                except Exception as e:
+                    # Log error but don't fail document upload
+                    print(f"Warning: Failed to generate embeddings for {file.filename}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Now commit the document with all metadata
             self.db.commit()
-            self.db.refresh(document)
-            
+            # Don't refresh after commit - document is already saved
+
             return document
             
         except S3Error as e:
@@ -196,20 +266,29 @@ class DocumentService:
         
         try:
             # Download file to temporary location
-            with tempfile.NamedTemporaryFile(suffix=f".{document.file_type}") as temp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{document.file_type}") as temp_file:
                 response = self.minio_client.get_object(
                     settings.minio_bucket,
                     document.file_path
                 )
-                
+
                 # Write content to temp file
                 for chunk in response.stream(32*1024):
                     temp_file.write(chunk)
                 temp_file.flush()
-                
-                # Extract text
-                text = extract_text_from_file(temp_file.name, document.file_type)
+                temp_file_path = temp_file.name
+                temp_file.close()  # Close explicitly before extraction
+
+            try:
+                # Extract text from the closed temp file
+                text = extract_text_from_file(temp_file_path, document.file_type)
                 return text
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to clean up temp file {temp_file_path}: {cleanup_error}")
                 
         except S3Error as e:
             raise BadRequestException(f"Failed to download file for text extraction: {str(e)}")

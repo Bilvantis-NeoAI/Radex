@@ -9,9 +9,9 @@ class RAGQuery(BaseModel):
     min_relevance_score: float = Field(default=0.7, ge=0.0, le=1.0)
 
 class RAGChunk(BaseModel):
-    document_id: UUID
+    document_id: str  # UUID for documents, file_id string for MCP analysis
     document_name: str
-    folder_id: UUID
+    folder_id: str  # UUID for folders or string for MCP context
     folder_name: str
     chunk_text: str
     relevance_score: float

@@ -1,5 +1,3 @@
-from typing import List
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -11,7 +9,8 @@ from app.core.exceptions import NotFoundException, BadRequestException, Permissi
 from app.services.permission_service import PermissionService
 from app.services.document_service import DocumentService
 from app.services.embedding_service import EmbeddingService
-import io
+from typing import List
+from uuid import UUID
 
 router = APIRouter()
 
@@ -36,13 +35,16 @@ async def upload_document(
         folder_id=folder_id,
         uploaded_by=current_user.id
     )
-    
-    # Start background task to process embeddings
-    try:
-        await embedding_service.process_document_embeddings(document.id)
-    except Exception as e:
-        # Log the error but don't fail the upload
-        print(f"Failed to process embeddings for document {document.id}: {e}")
+
+    # Only process embeddings for non-CSV/Excel files
+    # CSV/Excel files use MCP processing instead
+    if document.file_type.lower() not in ['csv', 'xlsx', 'xls']:
+        # Start background task to process embeddings
+        try:
+            await embedding_service.process_document_embeddings(document.id)
+        except Exception as e:
+            # Log the error but don't fail the upload
+            print(f"Failed to process embeddings for document {document.id}: {e}")
     
     return DocumentUploadResponse(
         id=document.id,
@@ -87,7 +89,12 @@ def get_document_metadata(
     # Check embedding status
     embeddings = embedding_service.get_document_embeddings(document_id)
     embedding_status = "completed" if embeddings and len(embeddings) > 0 else "pending"
-    
+    # For CSV/Excel files, check if MCP processing completed
+    if document.file_type.lower() in ['csv', 'xlsx', 'xls'] and embedding_status == "pending":
+        doc_metadata = document.doc_metadata or {}
+        if doc_metadata.get('mcp_file_id'):
+            embedding_status = "completed"
+
     # Create document with status
     doc_dict = {
         "id": document.id,
@@ -101,7 +108,7 @@ def get_document_metadata(
         "updated_at": document.updated_at,
         "embedding_status": embedding_status
     }
-    
+
     return Document(**doc_dict)
 
 @router.get("/documents/{document_id}/download")
@@ -203,6 +210,15 @@ def list_folder_documents(
         embeddings = embedding_service.get_document_embeddings(doc.id)
         if embeddings and len(embeddings) > 0:
             doc_dict["embedding_status"] = "completed"
+        # For CSV/Excel files, check if MCP processing completed
+        elif doc.file_type.lower() in ['csv', 'xlsx', 'xls']:
+            doc_metadata = doc.doc_metadata or {}
+            print(f"Checking MCP status for {doc.filename}: metadata={doc_metadata}")
+            if doc_metadata.get('mcp_file_id'):
+                print(f"MCP file_id found for {doc.filename}: {doc_metadata.get('mcp_file_id')}")
+                doc_dict["embedding_status"] = "completed"
+            else:
+                print(f"No MCP file_id found for {doc.filename}")
         
         documents_with_status.append(Document(**doc_dict))
     

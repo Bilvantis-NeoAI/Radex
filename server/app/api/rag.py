@@ -6,7 +6,7 @@ from app.schemas import RAGQuery, RAGResponse, ChatRequest, ChatResponse
 from app.models import User as UserModel
 from app.core.dependencies import get_current_active_user
 from app.core.exceptions import BadRequestException, PermissionDeniedException
-from app.services.rag_service import RAGService
+from app.services.rag_service_enhanced import RAGService
 
 router = APIRouter()
 
@@ -85,6 +85,7 @@ async def rag_chat(
     - Maintains conversation context using the last 5 messages
     - Reformulates queries based on conversation history for better retrieval
     - Returns response with source citations
+    - Uses Enhanced MCP for CSV/Excel natural language processing
     """
     rag_service = RAGService(db)
 
@@ -120,10 +121,13 @@ def rag_health_check(
 
     return {
         "status": "healthy",
+        "enhanced_features": True,  # Indicates enhanced MCP integration
         "user_id": str(current_user.id),
         "accessible_folders": total_folders,
         "queryable_folders": queryable_folders_count,
         "total_documents": total_documents,
         "total_embeddings": total_embeddings,
-        "can_query": queryable_folders_count > 0
+        "can_query": queryable_folders_count > 0,
+        "mcp_support": True,  # Enhanced MCP for CSV/Excel
+        "natural_language": True  # Natural language processing
     }

@@ -6,6 +6,7 @@ import pypdf
 import docx
 from bs4 import BeautifulSoup
 import markdown
+import pandas as pd
 
 def get_file_type(filename: str) -> Optional[str]:
     """Get file type from filename"""
@@ -14,7 +15,7 @@ def get_file_type(filename: str) -> Optional[str]:
 
 def is_supported_file_type(file_type: str) -> bool:
     """Check if file type is supported for text extraction"""
-    supported_types = ['pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm']
+    supported_types = ['pdf', 'docx', 'doc', 'txt', 'md', 'html', 'htm', 'csv', 'xlsx', 'xls']
     return file_type.lower() in supported_types
 
 def extract_text_from_file(file_path: str, file_type: str) -> str:
@@ -32,6 +33,10 @@ def extract_text_from_file(file_path: str, file_type: str) -> str:
             return extract_markdown_text(file_path)
         elif file_type == 'txt':
             return extract_text_file(file_path)
+        elif file_type == 'csv':
+            return extract_csv_text(file_path)
+        elif file_type in ['xlsx', 'xls']:
+            return extract_excel_text(file_path)
         else:
             # Try to read as plain text
             return extract_text_file(file_path)
@@ -131,3 +136,26 @@ def validate_file_size(file_size: int, max_size_mb: int = 50) -> bool:
     """Validate file size (default max 50MB)"""
     max_size_bytes = max_size_mb * 1024 * 1024
     return file_size <= max_size_bytes
+
+def extract_csv_text(file_path: str) -> str:
+    """Extract text from CSV file by converting to markdown table"""
+    try:
+        df = pd.read_csv(file_path)
+        # Convert DataFrame to markdown table format
+        return df.to_markdown(index=False)
+    except Exception as e:
+        raise ValueError(f"Error reading CSV file: {str(e)}")
+
+def extract_excel_text(file_path: str) -> str:
+    """Extract text from Excel file by converting all sheets to markdown tables"""
+    try:
+        # Read all sheets
+        excel_file = pd.ExcelFile(file_path)
+        sheets_text = []
+        for sheet_name in excel_file.sheet_names:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+            sheet_text = f"Sheet: {sheet_name}\n{df.to_markdown(index=False)}"
+            sheets_text.append(sheet_text)
+        return "\n\n".join(sheets_text)
+    except Exception as e:
+        raise ValueError(f"Error reading Excel file: {str(e)}")

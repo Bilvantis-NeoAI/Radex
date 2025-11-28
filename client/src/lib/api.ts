@@ -159,9 +159,11 @@ class ApiClient {
   async uploadDocument(folderId: string, file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    
+
+    // Use longer timeout for file uploads (60 seconds to handle MCP processing)
     const response = await this.client.post(`/api/v1/folders/${folderId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000  // 60 seconds for file upload including MCP processing
     });
     return response.data;
   }
@@ -204,7 +206,14 @@ class ApiClient {
     limit?: number;
     min_relevance_score?: number;
   }) {
-    const response = await this.client.post('/api/v1/rag/chat', data);
+    console.log('🎯 RAG Chat Request:', data);
+
+    // Increase timeout to 60 seconds for RAG processing (which can take time)
+    const response = await this.client.post('/api/v1/rag/chat', data, {
+      timeout: 60000,  // 60 seconds instead of default 10 seconds
+    });
+
+    console.log('✅ RAG Chat Response:', response.data);
     return response.data;
   }
 
@@ -377,6 +386,53 @@ class ApiClient {
     return response.data;
   }
 
+  // MCP Data Analysis endpoints
+  async uploadMCPFiles(folderId: string, files: File[], sessionId?: string) {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    formData.append('folder_id', folderId);
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+
+    // Use a longer timeout for file processing (60 seconds)
+    const response = await this.client.post('/api/v1/mcp/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000
+    });
+    return response.data;
+  }
+
+  async queryMCP(question: string, sessionId: string, folderId?: string) {
+    const response = await this.client.post('/api/v1/mcp/query', {
+      question,
+      session_id: sessionId,
+      folder_id: folderId
+    });
+    return response.data;
+  }
+
+  async listMCPFiles(folderId?: string) {
+    const params: Record<string, string> = {};
+    if (folderId) params.folder_id = folderId;
+
+    const response = await this.client.get('/api/v1/mcp/files', { params });
+    return response.data;
+  }
+
+  async getMCPChatHistory(sessionId: string, limit?: number) {
+    const params: Record<string, string | number> = {};
+    if (limit) params.limit = limit;
+
+    const response = await this.client.get(`/api/v1/mcp/chat/${sessionId}`, { params });
+    return response.data;
+  }
+
+  async clearMCPChatHistory(sessionId: string) {
+    const response = await this.client.delete(`/api/v1/mcp/chat/${sessionId}`);
+    return response.data;
+  }
+
   // Configuration endpoints
   async getProvidersConfig() {
     const response = await this.client.get('/api/v1/config/providers');
@@ -419,6 +475,29 @@ class ApiClient {
   async getSharePointConnections() {
     const response = await this.client.get('/api/v1/providers/sharepoint/connections');
     return response.data; // { connections: [...] }
+  }
+
+  /**
+   * Clear all SharePoint connections for the user
+   */
+  async clearAllSharePointConnections() {
+    await this.client.delete('/api/v1/providers/sharepoint/connections');
+  }
+
+  /**
+   * Test SharePoint connection
+   */
+  async testSharePointConnection(connectionId: string) {
+    const response = await this.client.post(`/api/v1/providers/sharepoint/${connectionId}/test-connection`);
+    return response.data; // { status, user?, onedrive?, error?, requires_reauth? }
+  }
+
+  /**
+   * Refresh SharePoint tokens
+   */
+  async refreshSharePointTokens(connectionId: string) {
+    const response = await this.client.post(`/api/v1/providers/sharepoint/${connectionId}/refresh-tokens`);
+    return response.data; // { status, new_expires_at?, error?, message? }
   }
 
   /**
@@ -493,7 +572,10 @@ class ApiClient {
       e_tag?: string;
     }>;
   }) {
-    const response = await this.client.post('/api/v1/sync/import', data);
+    // Use longer timeout for file imports, especially for multiple large files
+    const response = await this.client.post('/api/v1/sync/import', data, {
+      timeout: 300000  // 5 minutes for potentially large SharePoint imports
+    });
     return response.data; // { total, succeeded, skipped, failed, results: [...] }
   }
 }
